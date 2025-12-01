@@ -106,7 +106,7 @@ class Block;
 class Flowsheet;
 
 using ModelPtr = Model*;
-using BlockPtr = Block*;
+using BlockPtr = std::shared_ptr<Block>;
 using FlowsheetPtr = std::shared_ptr<Flowsheet>;
 using CompID = std::string;
 using Comps = std::vector<CompID>;
@@ -177,9 +177,7 @@ public:
     virtual void eval_constraints();
 };
 
-void finish_block(const BlockPtr blk);
-
-class Flowsheet
+class Flowsheet : public std::enable_shared_from_this<Flowsheet>
 {
 public:
     std::string name;
@@ -203,6 +201,23 @@ public:
             prefix = parent->prefix + name + ".";
         }
     }
+
+    template<typename T>
+    std::shared_ptr<T> add_block(const std::string&            name_,
+                                 ModelPtr                      m_,
+                                 const std::vector<StreamPtr>& inlets_ = {},
+                                 const std::vector<StreamPtr>& outlets_ = {})
+    {
+        auto fs = shared_from_this();
+        auto blk = std::make_shared<T>(name_, m_, fs, inlets_, outlets_);
+        fs->blocks[blk->name] = blk;
+        for (const auto& sin : blk->inlets)
+            sin->to = blk;
+        for (const auto& sout : blk->outlets)
+            sout->from = blk;
+        return blk;
+    }   
+
 };
 
 class Model
