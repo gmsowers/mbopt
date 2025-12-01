@@ -18,7 +18,7 @@ int main()
     Comps cmix {c + c2};
     auto sin2 = m.add_stream("N2", m.index_fs, c2);
     auto sout = m.add_stream("OUT", m.index_fs, cmix);
-    auto mix1 = new Mixer("mix1", &m, m.index_fs, {sin1, sin2}, sout);
+    auto mix1 = add_block<Mixer>("mix1", &m, m.index_fs, {sin1, sin2}, {sout});
     for (auto& v : m.x)
         cout << v->name << '\n';
     for (auto& eq : m.g)

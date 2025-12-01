@@ -8,8 +8,8 @@ public:
     Mixer(const std::string&            name_,
           ModelPtr                      m_,
           FlowsheetPtr                  fs_,
-          const std::vector<StreamPtr>& inlets_,
-          StreamPtr                     outlet);
+          const std::vector<StreamPtr>& inlets_ = {},
+          const std::vector<StreamPtr>& outlets_ = {});
 
     void eval_constraints() override;
 };

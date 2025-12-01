@@ -6,8 +6,9 @@ Mixer::Mixer(const std::string&            name_,
              ModelPtr                      m_,
              FlowsheetPtr                  fs_,
              const std::vector<StreamPtr>& inlets_,
-             StreamPtr                     outlet): Block(name_, m_, fs_, inlets_, {outlet})
+             const std::vector<StreamPtr>& outlets_): Block(name_, m_, fs_, inlets_, outlets_)
 {
+    const StreamPtr outlet = outlets[0];
     Comps inlet_comps_union {};
     for (const auto& sin : inlets)
         inlet_comps_union += sin->comps;
@@ -66,7 +67,6 @@ Mixer::Mixer(const std::string&            name_,
         H.push_back(m->add_hessian_element(eq, x_strm[sout].total_mass, x_strm[sout].massfrac[compID]));
     }
 
-    finish_block(this);
 }
 
 void Mixer::eval_constraints()

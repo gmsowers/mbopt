@@ -84,15 +84,6 @@ StreamPtr Model::add_stream(const std::string& name_, FlowsheetPtr fs,  Comps& c
     return strm;
 }
 
-void finish_block(const BlockPtr blk)
-{
-    blk->fs->blocks[blk->name] = blk;
-    for (const auto& sin : blk->inlets)
-        sin->to = blk;
-    for (const auto& sout : blk->outlets)
-        sout->from = blk;
-}
-
 void Block::eval_constraints() {}
 
 //std::string makePrefix(const string& fsName, const string& objName) {
