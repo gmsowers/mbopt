@@ -1,0 +1,7 @@
+testModel
+.vscode
+build
+cmake-build-debug
+*.o
+*.dSYM
+.DS_Store

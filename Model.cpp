@@ -20,16 +20,41 @@ Comps& operator+=(Comps& c1, const Comps& c2)
     return c1;
 }
 
-VariablePtr Model::add_variable(const std::string& name_, const Unit& unit)
+//---------------------------------------------------------
+
+FlowsheetPtr Flowsheet::add_child(const std::string& name_)
 {
-    auto v = std::make_shared<Variable>(name_, unit);
-    x.push_back(v);
-    x_map[name_] = x.back();
-    return v;
+    auto parent = shared_from_this();
+    auto fs = std::make_shared<Flowsheet>(name_, parent->m, parent);
+    parent->children.push_back(fs);
+    return fs;
+}
+
+StreamPtr Flowsheet::add_stream(const std::string& name_, Comps& comps)
+{
+    auto fs = shared_from_this();
+    auto strm = make_shared<Stream>(name_, fs, comps);
+    fs->streams[name_] = strm;
+    return strm;
+}
+
+//---------------------------------------------------------
+
+Block::Block(const std::string&     name_,
+             FlowsheetPtr           fs_,
+             const std::vector<StreamPtr>& inlets_,
+             const std::vector<StreamPtr>& outlets_) :
+    name {name_},
+    fs {fs_},
+    inlets {inlets_},
+    outlets {outlets_}
+{
+    prefix = (fs_->name != "index" ? fs_->name + "." : "") + name_ + ".";
 }
 
 void Block::make_stream_variables(const StreamPtr& strm)
 {
+    auto m = strm->fs->m;
     const std::string s_prefix = strm->fs->prefix + name + "." + strm->name + ".";
     StreamVars strm_vars {};
     strm_vars.total_mass = m->add_variable(s_prefix + "mass", m->unit_set["massflow"]);
@@ -49,11 +74,23 @@ void Block::make_stream_variables(const std::vector<StreamPtr>& strms1, const st
         make_stream_variables(strm);
 }
 
+void Block::eval_constraints() {}
+
+//---------------------------------------------------------
+
+VariablePtr Model::add_variable(const std::string& name_, const Unit& unit)
+{
+    auto v = std::make_shared<Variable>(name_, unit);
+    x.push_back(v);
+    x_map[name_] = v;
+    return v;
+}
+
 ConstraintPtr Model::add_constraint(const std::string& name_)
 {
     auto con = std::make_shared<Constraint>(name_);
     g.push_back(con);
-    g_map[name_] = g.back();
+    g_map[name_] = con;
     return con;
 }
 
@@ -67,26 +104,4 @@ HessianElementPtr Model::add_hessian_element(const ConstraintPtr& con_, const Va
     auto h = std::make_shared<HessianElement>(con_, var1_, var2_);
     H.push_back(h);
     return h;
-
 }
-
-FlowsheetPtr Model::add_flowsheet(const std::string& name_, FlowsheetPtr parent_) const
-{
-    auto fs = std::make_shared<Flowsheet>(name_, parent_);
-    parent_->children.push_back(fs);
-    return fs;
-}
-
-StreamPtr Model::add_stream(const std::string& name_, FlowsheetPtr fs,  Comps& comps) const
-{
-    auto strm = make_shared<Stream>(name_, fs, comps);
-    fs->streams[name_] = strm;
-    return strm;
-}
-
-void Block::eval_constraints() {}
-
-//std::string makePrefix(const string& fsName, const string& objName) {
-//    return (fsName.length() > 0 ? fsName + "." : "") + objName + ".";
-//}
-

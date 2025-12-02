@@ -9,6 +9,6 @@ add_executable(mbopt
         Model.cpp
         Mixer.cpp)
 
-#target_include_directories(mbopt PRIVATE /opt/homebrew/opt/llvm/include)
-#target_link_directories(mbopt PRIVATE /opt/homebrew/opt/llvm/lib)
-target_link_libraries(mbopt /opt/homebrew/opt/llvm/lib/c++/libc++.1.0.dylib)
+if(APPLE)
+        target_link_libraries(mbopt /opt/homebrew/opt/llvm/lib/c++/libc++.1.0.dylib)
+endif()

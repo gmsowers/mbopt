@@ -21,8 +21,9 @@ struct Unit
     {}
 };
 
-enum class VariableSpec { Fixed, Free };
+//---------------------------------------------------------
 
+enum class VariableSpec { Fixed, Free };
 using Ndouble = std::optional<double>;
 
 class Variable
@@ -55,6 +56,8 @@ public:
 
 using VariablePtr = std::shared_ptr<Variable>;
 
+//---------------------------------------------------------
+
 struct Constraint
 {
     std::string name {};
@@ -71,6 +74,8 @@ struct Constraint
 
 using ConstraintPtr = std::shared_ptr<Constraint>;
 
+//---------------------------------------------------------
+
 struct JacobianElement
 {
     ConstraintPtr con;
@@ -84,6 +89,8 @@ struct JacobianElement
 };
 
 using JacobianElementPtr = std::shared_ptr<JacobianElement>;
+
+//---------------------------------------------------------
 
 struct HessianElement
 {
@@ -114,6 +121,8 @@ using Comps = std::vector<CompID>;
 Comps operator+(const Comps& c1, const Comps& c2);
 Comps& operator+=(Comps& c1, const Comps& c2);
 
+//---------------------------------------------------------
+
 struct Stream 
 {
     std::string name;
@@ -137,6 +146,8 @@ struct Stream
 
 using StreamPtr = std::shared_ptr<Stream>;
 
+//---------------------------------------------------------
+
 struct StreamVars
 {
     VariablePtr total_mass {};
@@ -144,14 +155,16 @@ struct StreamVars
     std::unordered_map<CompID, VariablePtr> massfrac {};
 };
 
+//---------------------------------------------------------
+
 class Block
 {
 public:
     std::string name {};
-    ModelPtr m {};
     FlowsheetPtr fs {};
     std::vector<StreamPtr> inlets {};
     std::vector<StreamPtr> outlets {};
+    std::string prefix {};
     std::vector<VariablePtr> x {};
     std::unordered_map<StreamPtr, StreamVars> x_strm {};
     std::vector<ConstraintPtr> g {};
@@ -160,16 +173,9 @@ public:
 
     Block() = default;
     Block(const std::string&     name_,
-          ModelPtr               m_,
           FlowsheetPtr           fs_,
           const std::vector<StreamPtr>& inlets_ = {},
-          const std::vector<StreamPtr>& outlets_ = {}) :
-        name {name_},
-        m {m_},
-        fs {fs_},
-        inlets {inlets_},
-        outlets {outlets_}
-    {}
+          const std::vector<StreamPtr>& outlets_ = {});
     virtual ~Block() = default;
 
     void make_stream_variables(const StreamPtr& strm);
@@ -177,10 +183,13 @@ public:
     virtual void eval_constraints();
 };
 
+//---------------------------------------------------------
+
 class Flowsheet : public std::enable_shared_from_this<Flowsheet>
 {
 public:
     std::string name;
+    ModelPtr m;
     std::string path;
     std::string prefix;
     FlowsheetPtr parent;
@@ -188,8 +197,9 @@ public:
     std::unordered_map<std::string, BlockPtr> blocks;
     std::unordered_map<std::string, StreamPtr> streams;
 
-    explicit Flowsheet(const std::string& name_ = "index", FlowsheetPtr parent_ = nullptr) :
+    Flowsheet(const std::string& name_, ModelPtr m_, FlowsheetPtr parent_ = nullptr) :
         name {name_},
+        m {m_},
         parent {parent_}
     {
         if (parent == nullptr) {
@@ -202,14 +212,16 @@ public:
         }
     }
 
+    FlowsheetPtr add_child(const std::string& name_);
+    StreamPtr add_stream(const std::string& name_, Comps& comps);
+
     template<typename T>
     std::shared_ptr<T> add_block(const std::string&            name_,
-                                 ModelPtr                      m_,
                                  const std::vector<StreamPtr>& inlets_ = {},
                                  const std::vector<StreamPtr>& outlets_ = {})
     {
         auto fs = shared_from_this();
-        auto blk = std::make_shared<T>(name_, m_, fs, inlets_, outlets_);
+        auto blk = std::make_shared<T>(name_, fs, inlets_, outlets_);
         fs->blocks[blk->name] = blk;
         for (const auto& sin : blk->inlets)
             sin->to = blk;
@@ -219,6 +231,8 @@ public:
     }   
 
 };
+
+//---------------------------------------------------------
 
 class Model
 {
@@ -237,13 +251,11 @@ public:
         name(name_),
         unit_set(unit_set_)
     {
-        index_fs = std::make_shared<Flowsheet>("index", nullptr);
+        index_fs = std::make_shared<Flowsheet>("index", this, nullptr);
     }
 
     VariablePtr add_variable(const std::string &name_, const Unit &unit);
     ConstraintPtr add_constraint(const std::string& name_);
     JacobianElementPtr add_jacobian_element(const ConstraintPtr& con_, const VariablePtr& var_);
     HessianElementPtr add_hessian_element(const ConstraintPtr& con_, const VariablePtr& var1_, const VariablePtr& var2_);
-    FlowsheetPtr add_flowsheet(const std::string& name_, FlowsheetPtr parent_) const;
-    StreamPtr add_stream(const std::string& name_, FlowsheetPtr fs, Comps& comps) const;
 };
