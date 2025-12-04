@@ -215,13 +215,14 @@ public:
     FlowsheetPtr add_child(const std::string& name_);
     StreamPtr add_stream(const std::string& name_, Comps& comps);
 
-    template<typename T>
+    template<typename T, typename... blk_params_T>
     std::shared_ptr<T> add_block(const std::string&            name_,
-                                 const std::vector<StreamPtr>& inlets_ = {},
-                                 const std::vector<StreamPtr>& outlets_ = {})
+                                 const std::vector<StreamPtr>& inlets_,
+                                 const std::vector<StreamPtr>& outlets_,
+                                 blk_params_T& ...blk_params)
     {
         auto fs = shared_from_this();
-        auto blk = std::make_shared<T>(name_, fs, inlets_, outlets_);
+        auto blk = std::make_shared<T>(name_, fs, inlets_, outlets_, blk_params...);
         fs->blocks[blk->name] = blk;
         for (const auto& sin : blk->inlets)
             sin->to = blk;
