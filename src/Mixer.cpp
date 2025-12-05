@@ -7,19 +7,13 @@ Mixer::Mixer(const std::string&            name_,
              const std::vector<StreamPtr>& inlets_,
              const std::vector<StreamPtr>& outlets_): Block(name_, fs_, inlets_, outlets_)
 {
-    const auto outlet = outlets[0];
+    const auto& sout = outlets[0];
     auto m = fs->m;
 
     Comps inlet_comps_union {};
     for (const auto& sin : inlets)
         inlet_comps_union += sin->comps;
-    assert(inlet_comps_union == outlet->comps);
-
-    const auto& sout = outlets[0];
-    make_stream_variables(inlets, outlets);
-    for (const auto& sin : inlets)
-        for (const auto& compID : sin->comps)
-            x_strm[sin].mass[compID]->fix();
+    assert(inlet_comps_union == sout->comps);
 
     // Component mass balances, e.g., mix1.N1.mass_H2 + mix1.N2.mass_H2 - mix1.OUT.mass_H2 == 0
     for (const auto& compID : sout->comps) {
@@ -73,7 +67,7 @@ Mixer::Mixer(const std::string&            name_,
 
 void Mixer::eval_constraints()
 {
-    const auto sout = outlets[0];
+    const auto& sout = outlets[0];
     auto ic = 0;
 
     // Component mass balances, e.g., mix1.N1.mass_H2 + mix1.N2.mass_H2 - mix1.OUT.mass_H2 == 0

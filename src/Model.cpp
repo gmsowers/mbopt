@@ -50,6 +50,14 @@ Block::Block(const std::string&     name_,
     outlets {outlets_}
 {
     prefix = (fs_->name != "index" ? fs_->name + "." : "") + name_ + ".";
+    make_stream_variables();
+    set_inlet_stream_specs();
+}
+
+void Block::set_inlet_stream_specs() {
+    for (const auto& sin : inlets)
+        for (const auto& compID : sin->comps)
+            x_strm[sin].mass[compID]->fix();
 }
 
 void Block::make_stream_variables(const StreamPtr& strm)
@@ -67,10 +75,10 @@ void Block::make_stream_variables(const StreamPtr& strm)
     x_strm[strm] = strm_vars;
 }
 
-void Block::make_stream_variables(const std::vector<StreamPtr>& strms1, const std::vector<StreamPtr>& strms2) {
-    for (const auto& strm : strms1)
+void Block::make_stream_variables() {
+    for (const auto& strm : inlets)
         make_stream_variables(strm);
-    for (const auto& strm : strms2)
+    for (const auto& strm : outlets)
         make_stream_variables(strm);
 }
 

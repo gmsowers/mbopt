@@ -177,10 +177,12 @@ public:
           const std::vector<StreamPtr>& inlets_ = {},
           const std::vector<StreamPtr>& outlets_ = {});
     virtual ~Block() = default;
-
-    void make_stream_variables(const StreamPtr& strm);
-    void make_stream_variables(const std::vector<StreamPtr>& strms1, const std::vector<StreamPtr>& strms2 = {});
     virtual void eval_constraints();
+
+private:
+    void make_stream_variables(const StreamPtr& strm);
+    void make_stream_variables();
+    void set_inlet_stream_specs();
 };
 
 //---------------------------------------------------------
@@ -230,7 +232,6 @@ public:
             sout->from = blk;
         return blk;
     }   
-
 };
 
 //---------------------------------------------------------

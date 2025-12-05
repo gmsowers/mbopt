@@ -1,7 +1,6 @@
-testModel
-.vscode
-build
-cmake-build-debug
-*.o
-*.dSYM
+.vscode/
+.vs/
+build-macos/
+build-windows/
+build-linux/
 .DS_Store
