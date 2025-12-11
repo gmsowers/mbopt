@@ -46,11 +46,12 @@ public:
     void fix() {spec = VariableSpec::Fixed;}
     double to_base() const {return value * unit.ratio + unit.offset;}
     double to_base(double value_) const {return value_ * unit.ratio + unit.offset;}
-    double from_base(double base_value) const {return (base_value - unit.offset) / unit.ratio;}
-    double from_base(double base_value, const Unit& u) const {return (base_value - u.offset) / u.ratio;}
-    double convert(const Unit& u) const {return from_base(to_base(value), u);}
-    double convert(double value_, const Unit& u) const {return from_base(to_base(value_), u);}
+    Variable& from_base(double base_value) {value = (base_value - unit.offset) / unit.ratio; return *this;}
+    //double from_base(double base_value, const Unit& u) const {return (base_value - u.offset) / u.ratio;}
+    //double convert(const Unit& u) const {return from_base(to_base(value), u);}
+    //double convert(double value_, const Unit& u) const {return from_base(to_base(value_), u);}
 
+    Variable& operator=(const double& val) {value = val; return *this;}
     operator double() const {return to_base();}
 };
 
@@ -86,6 +87,8 @@ struct JacobianElement
         con {con_},
         var {var_}
     {}
+
+    JacobianElement& operator=(const double& val) {value = val; return *this;}
 };
 
 using JacobianElementPtr = std::shared_ptr<JacobianElement>;
@@ -104,6 +107,8 @@ struct HessianElement
         var1 {var1_},
         var2 {var2_}
     {}
+
+    HessianElement& operator=(const double& val) {value = val; return *this;}
 };
 
 using HessianElementPtr = std::shared_ptr<HessianElement>;
@@ -174,10 +179,13 @@ public:
     Block() = default;
     Block(const std::string&     name_,
           FlowsheetPtr           fs_,
-          const std::vector<StreamPtr>& inlets_ = {},
-          const std::vector<StreamPtr>& outlets_ = {});
+          const std::vector<StreamPtr>& inlets_,
+          const std::vector<StreamPtr>& outlets_);
     virtual ~Block() = default;
-    virtual void eval_constraints();
+    virtual void initialize() = 0;
+    virtual void eval_constraints() = 0;
+    virtual void eval_jacobian() = 0;
+    virtual void eval_hessian() = 0;
 
 private:
     void make_stream_variables(const StreamPtr& strm);

@@ -3,4 +3,6 @@
 build-macos/
 build-windows/
 build-linux/
+libs/
+include/
 .DS_Store

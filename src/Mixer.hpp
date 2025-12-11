@@ -10,5 +10,9 @@ public:
           const std::vector<StreamPtr>& inlets_ ,
           const std::vector<StreamPtr>& outlets_);
 
+    void initialize() override;
     void eval_constraints() override;
+    void eval_jacobian() override;
+    void eval_hessian() override;
+
 };
