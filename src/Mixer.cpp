@@ -113,8 +113,8 @@ void Mixer::eval_constraints()
     auto ic = 0;
 
     // Component mass balances, \sum_{Ni in inlets}(mix1.Ni.mass_Cj) - mix1.OUT.mass_Cj == 0 for Cj in outlet comps.
-    *g[ic] = 0.0;
     for (const auto& compID : sout->comps) {
+        *g[ic] = 0.0;
         for (const auto& sin : inlets)
             if (x_strm[sin].mass.contains(compID))
                 *g[ic] += *x_strm[sin].mass.at(compID);
