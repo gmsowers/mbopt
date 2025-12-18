@@ -1,5 +1,7 @@
 #pragma once
+#include <iostream>
 #include <string>
+#include <format>
 #include <vector>
 #include <set>
 #include <unordered_map>
@@ -11,6 +13,15 @@
 
 #define NO_BOUND 1.0e20;
 
+using std::string;
+using std::vector;
+using std::unordered_map;
+using std::shared_ptr;
+using std::make_shared;
+using std::format;
+using std::ostream;
+using std::cout;
+
 using Ipopt::TNLP;
 using Ipopt::Index;
 using Ipopt::Number;
@@ -20,17 +31,17 @@ using Ipopt::SolverReturn;
 
 struct Unit
 {
-    std::string str      {};
-    std::string base_str {};
-    double      ratio    {1.0};
-    double      offset   {0.0};
+    string str      {};
+    string base_str {};
+    double ratio    {1.0};
+    double offset   {0.0};
 
-    Unit(const std::string& str_      = "",
-         const std::string& base_str_ = "",
-         double             ratio_    = 1.0,
-         double             offset_   = 0.0) :
+    Unit(const string& str_      = "",
+         const string& base_str_ = "",
+         double        ratio_    = 1.0,
+         double        offset_   = 0.0) :
         str      {str_},
-        base_str {(base_str_.empty()) ? str_ : base_str_},
+        base_str {base_str_.empty() ? str_ : base_str_},
         ratio    {ratio_},
         offset   {offset_}
     {}
@@ -41,21 +52,23 @@ struct Unit
 enum class VariableSpec { Fixed, Free };
 using Ndouble = std::optional<double>;
 
+string str(double d);
+string str(Ndouble nd);
+string str(VariableSpec spec);
+
 class Variable
 {
 public:
     Index        ix    {};
-    std::string  name  {};
+    string       name  {};
     double       value {0.0};
-    double       init  {0.0};
     Ndouble      lower {};
     Ndouble      upper {};
-    double       scale {1.0};
     Unit         unit  {"none"};
     VariableSpec spec  {VariableSpec::Free};
 
-    Variable(const std::string& name_ = "unnamed",
-             const Unit& unit_        = Unit("none")) :
+    Variable(const string& name_ = "unnamed",
+             const Unit& unit_   = Unit("none")) :
         name {name_},
         unit {unit_}
     {}
@@ -68,21 +81,25 @@ public:
     //double convert(const Unit& u) const {return from_base(to_base(value), u);}
     //double convert(double value_, const Unit& u) const {return from_base(to_base(value_), u);}
 
+    string to_str() {return format("{:32}|{}|{}|{}|{}|{:8}|", name, str(spec), str(value),
+        str(lower), str(upper), unit.str);}
     Variable& operator=(const double& val) {value = val; return *this;}
     operator double() const {return to_base();}
 };
 
-using VariablePtr = std::shared_ptr<Variable>;
+using VariablePtr = shared_ptr<Variable>;
+
+ostream& operator<<(ostream& os, const VariablePtr& var);
 
 //---------------------------------------------------------
 
 struct Constraint
 {
-    Index ix {};
-    std::string name {};
+    Index  ix    {};
+    string name  {};
     double value {0.0};
 
-    Constraint(const std::string& name_ = "") :
+    Constraint(const string& name_ = "") :
         name {name_}
     {}
 
@@ -91,7 +108,7 @@ struct Constraint
     Constraint& operator-=(const double& val) {value -= val; return *this;}
 };
 
-using ConstraintPtr = std::shared_ptr<Constraint>;
+using ConstraintPtr = shared_ptr<Constraint>;
 
 //---------------------------------------------------------
 
@@ -110,7 +127,7 @@ struct JacobianElement
     JacobianElement& operator=(const double& val) {value = val; return *this;}
 };
 
-using JacobianElementPtr = std::shared_ptr<JacobianElement>;
+using JacobianElementPtr = shared_ptr<JacobianElement>;
 
 //---------------------------------------------------------
 
@@ -132,17 +149,17 @@ struct HessianElement
     HessianElement& operator=(const double& val) {value = val; return *this;}
 };
 
-using HessianElementPtr = std::shared_ptr<HessianElement>;
+using HessianElementPtr = shared_ptr<HessianElement>;
 
 class Model;
 class Block;
 class Flowsheet;
 
 using ModelPtr = Model*;
-using BlockPtr = std::shared_ptr<Block>;
-using FlowsheetPtr = std::shared_ptr<Flowsheet>;
-using CompID = std::string;
-using Comps = std::vector<CompID>;
+using BlockPtr = shared_ptr<Block>;
+using FlowsheetPtr = shared_ptr<Flowsheet>;
+using CompID = string;
+using Comps = vector<CompID>;
 
 Comps operator+(const Comps& c1, const Comps& c2);
 Comps& operator+=(Comps& c1, const Comps& c2);
@@ -151,16 +168,16 @@ Comps& operator+=(Comps& c1, const Comps& c2);
 
 struct Stream 
 {
-    std::string  name;
+    string       name;
     FlowsheetPtr fs;
     Comps        comps {};
     BlockPtr     to    {};
     BlockPtr     from  {};
 
     Stream() = default;
-    Stream(const std::string& name_,
-           FlowsheetPtr       fs_, 
-           const Comps&       comps_) :
+    Stream(const string& name_,
+           FlowsheetPtr  fs_, 
+           const Comps&  comps_) :
         name  {name_},
         fs    {fs_},
         comps {comps_}
@@ -172,15 +189,15 @@ struct Stream
     }
 };
 
-using StreamPtr = std::shared_ptr<Stream>;
+using StreamPtr = shared_ptr<Stream>;
 
 //---------------------------------------------------------
 
 struct StreamVars
 {
-    VariablePtr                             total_mass {};
-    std::unordered_map<CompID, VariablePtr> mass       {};
-    std::unordered_map<CompID, VariablePtr> massfrac   {};
+    VariablePtr                        total_mass {};
+    unordered_map<CompID, VariablePtr> mass       {};
+    unordered_map<CompID, VariablePtr> massfrac   {};
 };
 
 //---------------------------------------------------------
@@ -188,22 +205,22 @@ struct StreamVars
 class Block
 {
 public:
-    std::string                               name    {};
-    FlowsheetPtr                              fs      {};
-    std::vector<StreamPtr>                    inlets  {};
-    std::vector<StreamPtr>                    outlets {};
-    std::string                               prefix  {};
-    std::vector<VariablePtr>                  x       {};
-    std::unordered_map<StreamPtr, StreamVars> x_strm  {};
-    std::vector<ConstraintPtr>                g       {};
-    std::vector<JacobianElementPtr>           J       {};
-    std::vector<HessianElementPtr>            H       {};
+    string                               name    {};
+    FlowsheetPtr                         fs      {};
+    vector<StreamPtr>                    inlets  {};
+    vector<StreamPtr>                    outlets {};
+    string                               prefix  {};
+    vector<VariablePtr>                  x       {};
+    unordered_map<StreamPtr, StreamVars> x_strm  {};
+    vector<ConstraintPtr>                g       {};
+    vector<JacobianElementPtr>           J       {};
+    vector<HessianElementPtr>            H       {};
 
     Block() = default;
-    Block(const std::string&            name_,
-          FlowsheetPtr                  fs_,
-          const std::vector<StreamPtr>& inlets_,
-          const std::vector<StreamPtr>& outlets_);
+    Block(const string&            name_,
+          FlowsheetPtr             fs_,
+          const vector<StreamPtr>& inlets_,
+          const vector<StreamPtr>& outlets_);
     virtual ~Block() = default;
     virtual void initialize() = 0;
     virtual void eval_constraints() = 0;
@@ -221,19 +238,19 @@ private:
 class Flowsheet : public std::enable_shared_from_this<Flowsheet>
 {
 public:
-    std::string                                name;
-    ModelPtr                                   m;
-    std::string                                path;
-    std::string                                prefix;
-    FlowsheetPtr                               parent;
-    std::vector<FlowsheetPtr>                  children;
-    std::vector<BlockPtr>                      blocks;
-    std::unordered_map<std::string, BlockPtr>  blocks_map;
-    std::unordered_map<std::string, StreamPtr> streams;
+    string                           name;
+    ModelPtr                         m;
+    string                           path;
+    string                           prefix;
+    FlowsheetPtr                     parent;
+    vector<FlowsheetPtr>             children;
+    vector<BlockPtr>                 blocks;
+    unordered_map<string, BlockPtr>  blocks_map;
+    unordered_map<string, StreamPtr> streams;
 
-    Flowsheet(const std::string& name_, 
-              ModelPtr           m_,
-              FlowsheetPtr       parent_ = nullptr) :
+    Flowsheet(const string& name_, 
+              ModelPtr      m_,
+              FlowsheetPtr  parent_ = nullptr) :
         name   {name_},
         m      {m_},
         parent {parent_}
@@ -248,18 +265,18 @@ public:
         }
     }
 
-    FlowsheetPtr add_child(const std::string& name_);
-    StreamPtr    add_stream(const std::string& name_,
-                            Comps&             comps);
+    FlowsheetPtr add_child(const string& name_);
+    StreamPtr    add_stream(const string& name_,
+                            const Comps&  comps);
 
     template<typename T, typename... blk_params_T>
-    std::shared_ptr<T> add_block(const std::string&            name_,
-                                 const std::vector<StreamPtr>& inlets_,
-                                 const std::vector<StreamPtr>& outlets_,
-                                 blk_params_T&                 ...blk_params)
+    shared_ptr<T> add_block(const string&            name_,
+                            const vector<StreamPtr>& inlets_,
+                            const vector<StreamPtr>& outlets_,
+                            blk_params_T&            ...blk_params)
     {
         auto fs = shared_from_this();
-        auto blk = std::make_shared<T>(name_, fs, inlets_, outlets_, blk_params...);
+        auto blk = make_shared<T>(name_, fs, inlets_, outlets_, blk_params...);
         fs->blocks.push_back(blk);
         fs->blocks_map[blk->name] = blk;
         for (const auto& sin : blk->inlets)
@@ -280,38 +297,40 @@ public:
 class Model : public TNLP
 {
 public:
-    std::string name;
+    string name;
     FlowsheetPtr index_fs {};
-    std::unordered_map<std::string, Unit> unit_set {};
-    std::vector<VariablePtr> x_vec {};
-    std::unordered_map<std::string, VariablePtr> x_map {};
-    std::vector<ConstraintPtr> g_vec {};
-    std::unordered_map<std::string, ConstraintPtr> g_map {};
-    std::vector<JacobianElementPtr> J {};
-    std::map<std::pair<Index, Index>, std::vector<HessianElementPtr>> H {};
+    unordered_map<string, Unit> unit_set {};
+    vector<VariablePtr> x_vec {};
+    unordered_map<string, VariablePtr> x_map {};
+    vector<ConstraintPtr> g_vec {};
+    unordered_map<string, ConstraintPtr> g_map {};
+    vector<JacobianElementPtr> J {};
+    std::map<std::pair<Index, Index>, vector<HessianElementPtr>> H {};
 
-    Model(const std::string& name_, const std::unordered_map<std::string, Unit>& unit_set_) :
+    Model(const string& name_, const unordered_map<string, Unit>& unit_set_) :
         name(name_),
         unit_set(unit_set_)
     {
-        index_fs = std::make_shared<Flowsheet>("index", this, nullptr);
+        index_fs = make_shared<Flowsheet>("index", this, nullptr);
         bool printiterate = true;
     }
 
-    VariablePtr        add_variable(const std::string &name_, const Unit &unit);
-    ConstraintPtr      add_constraint(const std::string& name_);
+    VariablePtr        add_variable(const string &name_, const Unit &unit);
+    ConstraintPtr      add_constraint(const string& name_);
     JacobianElementPtr add_jacobian_element(const ConstraintPtr& con, const VariablePtr& var);
     HessianElementPtr  add_hessian_element(const ConstraintPtr& con, const VariablePtr& var1, const VariablePtr& var2);
     void               initialize() {index_fs->initialize();};
     void               eval_constraints() {index_fs->eval_constraints();};
     void               eval_jacobian() {index_fs->eval_jacobian();};
     void               eval_hessian() {index_fs->eval_hessian();};
-        
+    void               print_variables(ostream& os = cout);
+    VariablePtr        var(const string& name_) {return x_map.contains(name_) ? x_map[name_] : nullptr;};
+    
     virtual bool get_nlp_info(
-        Index&                n,
-        Index&                m,
-        Index&                nnz_jac_g,
-        Index&                nnz_h_lag,
+        Index&          n,
+        Index&          m,
+        Index&          nnz_jac_g,
+        Index&          nnz_h_lag,
         IndexStyleEnum& index_style) override;
 
     virtual bool get_bounds_info(
@@ -389,3 +408,6 @@ public:
         IpoptCalculatedQuantities* ip_cq) override;
 
 };
+
+//---------------------------------------------------------
+

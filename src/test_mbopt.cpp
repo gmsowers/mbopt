@@ -30,12 +30,16 @@ int main()
 
     auto mix1 = fs->add_block<Mixer>("mix1", {sin1, sin2}, {sout});
 
-    M->x_map["mix1.N1.mass_O2"]->value = 1.0;
-    M->x_map["mix1.N1.mass_H2"]->value = 1.0;
-    M->x_map["mix1.N2.mass_H2"]->value = 1.0;
-    M->x_map["mix1.N2.mass_O2"]->value = 1.0;
-    M->x_map["mix1.N2.mass_CO"]->value = 1.0;
+    M->var("mix1.N1.mass_O2")->value = 1.0;
+    M->var("mix1.N1.mass_H2")->value = 1.0;
+    M->var("mix1.N2.mass_H2")->value = 1.0;
+    M->var("mix1.N2.mass_O2")->value = 1.0;
+    M->var("mix1.N2.mass_CO")->value = 1.0;
+    M->var("mix1.N2.mass_CO")->lower = 0.0;
+    M->var("mix1.N2.mass_CO")->upper = 1000.0;
 
+    M->print_variables();
+#ifdef UNDEF    
     for (Index i = 0; const auto var : M->x_vec)
         std::cout << i++ << " " << var->name << " = " << var->value << "    " << (var->spec == VariableSpec::Fixed ? "Fixed" : "") << '\n';
 
@@ -73,6 +77,6 @@ int main()
         std::cout << "Solver failed, status= " << status << '\n';
         return 1;
     }
-
+#endif
     return 0;
 }

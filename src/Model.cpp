@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cassert>
-#include <iostream>
 #include "Model.hpp"
 
 Comps operator+(const Comps& c1, const Comps& c2)
@@ -24,15 +23,15 @@ Comps& operator+=(Comps& c1, const Comps& c2)
 
 //---------------------------------------------------------
 
-FlowsheetPtr Flowsheet::add_child(const std::string& name_)
+FlowsheetPtr Flowsheet::add_child(const string& name_)
 {
     auto parent = shared_from_this();
-    auto fs = std::make_shared<Flowsheet>(name_, parent->m, parent);
+    auto fs = make_shared<Flowsheet>(name_, parent->m, parent);
     parent->children.push_back(fs);
     return fs;
 }
 
-StreamPtr Flowsheet::add_stream(const std::string& name_, Comps& comps)
+StreamPtr Flowsheet::add_stream(const string& name_, const Comps& comps)
 {
     auto fs = shared_from_this();
     auto strm = make_shared<Stream>(name_, fs, comps);
@@ -70,13 +69,13 @@ void Flowsheet::eval_hessian() {
 
 //---------------------------------------------------------
 
-Block::Block(const std::string&     name_,
-             FlowsheetPtr           fs_,
-             const std::vector<StreamPtr>& inlets_,
-             const std::vector<StreamPtr>& outlets_) :
-    name {name_},
-    fs {fs_},
-    inlets {inlets_},
+Block::Block(const string&            name_,
+             FlowsheetPtr             fs_,
+             const vector<StreamPtr>& inlets_,
+             const vector<StreamPtr>& outlets_) :
+    name    {name_},
+    fs      {fs_},
+    inlets  {inlets_},
     outlets {outlets_}
 {
     prefix = (fs_->name != "index" ? fs_->name + "." : "") + name_ + ".";
@@ -93,10 +92,10 @@ void Block::set_inlet_stream_specs() {
 void Block::make_stream_variables(const StreamPtr& strm)
 {
     auto m = strm->fs->m;
-    const std::string s_prefix = strm->fs->prefix + name + "." + strm->name + ".";
+    const string s_prefix = strm->fs->prefix + name + "." + strm->name + ".";
     StreamVars strm_vars {};
     strm_vars.total_mass = m->add_variable(s_prefix + "mass", m->unit_set["massflow"]);
-    std::string c_prefix = s_prefix + "mass_";
+    string c_prefix = s_prefix + "mass_";
     for (const auto& c : strm->comps)
         strm_vars.mass[c] = m->add_variable(c_prefix + c, m->unit_set["massflow"]);
     c_prefix = s_prefix + "massfrac_";
@@ -114,18 +113,18 @@ void Block::make_stream_variables() {
 
 //---------------------------------------------------------
 
-VariablePtr Model::add_variable(const std::string& name_, const Unit& unit)
+VariablePtr Model::add_variable(const string& name_, const Unit& unit)
 {
-    auto v = std::make_shared<Variable>(name_, unit);
+    auto v = make_shared<Variable>(name_, unit);
     v->ix = x_vec.size();
     x_vec.push_back(v);
     x_map[name_] = v;
     return v;
 }
 
-ConstraintPtr Model::add_constraint(const std::string& name_)
+ConstraintPtr Model::add_constraint(const string& name_)
 {
-    auto con = std::make_shared<Constraint>(name_);
+    auto con = make_shared<Constraint>(name_);
     con->ix = g_vec.size();
     g_vec.push_back(con);
     g_map[name_] = con;
@@ -133,19 +132,26 @@ ConstraintPtr Model::add_constraint(const std::string& name_)
 }
 
 JacobianElementPtr Model::add_jacobian_element(const ConstraintPtr& con, const VariablePtr& var) {
-    auto j = std::make_shared<JacobianElement>(con, var);
+    auto j = make_shared<JacobianElement>(con, var);
     J.push_back(j);
     return j;
 }
 
 HessianElementPtr Model::add_hessian_element(const ConstraintPtr& con, const VariablePtr& var1, const VariablePtr& var2) {
-    auto h = std::make_shared<HessianElement>(con, var1, var2);
+    auto h = make_shared<HessianElement>(con, var1, var2);
     auto row_col = std::make_pair(std::max(var1->ix, var2->ix), std::min(var1->ix, var2->ix));
     H[row_col].push_back(h);
     return h;
 }
 
 //---------------------------------------------------------
+
+void Model::print_variables(ostream& os) {
+    os << "              Name               Fix      Value          Lower          Upper      Units\n";
+    os << "--------------------------------|---|--------------|--------------|--------------|--------|\n";
+    for (const auto var : x_vec)
+        os << var << '\n';
+}
 
 bool Model::get_nlp_info(
     Index&          n,
@@ -324,4 +330,22 @@ void Model::finalize_solution(
 {
     for (Index i = 0; const auto var : x_vec)
         var->from_base(x_final[i++]);
+}
+
+//---------------------------------------------------------
+
+string str(double d) {
+    return format("{:14.7g}", d);
+}
+
+string str(Ndouble nd) {
+    return nd.has_value() ? format("{:14.7g}", nd.value()) : format("{:14}", "");
+}
+
+string str(VariableSpec spec) {
+    return spec == VariableSpec::Fixed ? " F " : "   ";
+}
+
+ostream& operator<<(ostream& os, const VariablePtr& var) {
+    return os << var->to_str();
 }
