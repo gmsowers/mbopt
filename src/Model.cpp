@@ -6,7 +6,7 @@ Comps operator+(const Comps& c1, const Comps& c2)
 {
     Comps u {c1};
     for (auto& c : c2) {
-        if (std::find(u.begin(), u.end(), c) == u.end())
+        if (std::ranges::find(u, c) == u.end())
             u.push_back(c);
     }
     return u;
@@ -15,7 +15,7 @@ Comps operator+(const Comps& c1, const Comps& c2)
 Comps& operator+=(Comps& c1, const Comps& c2)
 {
     for (auto& c : c2) {
-        if (std::find(c1.begin(), c1.end(), c) == c1.end())
+        if (std::ranges::find(c1, c) == c1.end())
             c1.push_back(c);
     }
     return c1;
@@ -23,16 +23,38 @@ Comps& operator+=(Comps& c1, const Comps& c2)
 
 //---------------------------------------------------------
 
-FlowsheetPtr Flowsheet::add_child(const string& name_)
-{
+UnitPtr UnitSet::add_unit(const string& unit_str,
+                          UnitKindPtr   unit_kind,
+                          double        unit_ratio,
+                          double        unit_offset) {
+    auto unit_ptr = make_shared<Unit>(unit_str, unit_kind, unit_ratio, unit_offset);
+    units[unit_str] = unit_ptr;
+    if (unit_str == unit_kind->base_unit_str)
+        unit_kind->base_unit = unit_ptr;
+    if (unit_str == unit_kind->default_unit_str)
+        unit_kind->default_unit = unit_ptr;
+    return unit_ptr;
+}
+
+UnitKindPtr UnitSet::add_kind(const string& unit_kind_str,
+                              const string& base_unit_str,
+                              const string& default_unit_str) {
+    auto unit_kind_ptr = make_shared<UnitKind>(unit_kind_str, base_unit_str,
+         default_unit_str.empty() ? base_unit_str : default_unit_str);
+    kinds[unit_kind_str] = unit_kind_ptr;
+    return unit_kind_ptr;
+}
+
+//---------------------------------------------------------
+
+FlowsheetPtr Flowsheet::add_child(const string& name_) {
     auto parent = shared_from_this();
     auto fs = make_shared<Flowsheet>(name_, parent->m, parent);
     parent->children.push_back(fs);
     return fs;
 }
 
-StreamPtr Flowsheet::add_stream(const string& name_, const Comps& comps)
-{
+StreamPtr Flowsheet::add_stream(const string& name_, const Comps& comps) {
     auto fs = shared_from_this();
     auto strm = make_shared<Stream>(name_, fs, comps);
     fs->streams[name_] = strm;
@@ -93,14 +115,22 @@ void Block::make_stream_variables(const StreamPtr& strm)
 {
     auto m = strm->fs->m;
     const string s_prefix = strm->fs->prefix + name + "." + strm->name + ".";
+
     StreamVars strm_vars {};
-    strm_vars.total_mass = m->add_variable(s_prefix + "mass", m->unit_set["massflow"]);
+
+    auto u_massflow = m->unit_set.get_default_unit("massflow");
+    auto u_massfrac = m->unit_set.get_default_unit("massfrac");
+
+    strm_vars.total_mass = m->add_variable(s_prefix + "mass", u_massflow);
+
     string c_prefix = s_prefix + "mass_";
     for (const auto& c : strm->comps)
-        strm_vars.mass[c] = m->add_variable(c_prefix + c, m->unit_set["massflow"]);
+        strm_vars.mass[c] = m->add_variable(c_prefix + c, u_massflow);
+
     c_prefix = s_prefix + "massfrac_";
     for (const auto& c : strm->comps)
-        strm_vars.massfrac[c] = m->add_variable(c_prefix + c, m->unit_set["massfrac"]);
+        strm_vars.massfrac[c] = m->add_variable(c_prefix + c, u_massfrac);
+    
     x_strm[strm] = strm_vars;
 }
 
@@ -113,7 +143,7 @@ void Block::make_stream_variables() {
 
 //---------------------------------------------------------
 
-VariablePtr Model::add_variable(const string& name_, const Unit& unit)
+VariablePtr Model::add_variable(const string& name_, UnitPtr unit)
 {
     auto v = make_shared<Variable>(name_, unit);
     v->ix = x_vec.size();

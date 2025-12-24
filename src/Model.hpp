@@ -29,22 +29,65 @@ using Ipopt::IpoptData;
 using Ipopt::IpoptCalculatedQuantities;
 using Ipopt::SolverReturn;
 
+struct UnitKind;
+using UnitKindPtr = shared_ptr<UnitKind>;
+
 struct Unit
 {
-    string str      {};
-    string base_str {};
-    double ratio    {1.0};
-    double offset   {0.0};
+    string str       {};
+    UnitKindPtr kind {};
+    double ratio     {1.0};
+    double offset    {0.0};
 
-    Unit(const string& str_      = "",
-         const string& base_str_ = "",
+    Unit() = default;
+    Unit(const string& str_,
+         UnitKindPtr   kind_,
          double        ratio_    = 1.0,
          double        offset_   = 0.0) :
         str      {str_},
-        base_str {base_str_.empty() ? str_ : base_str_},
+        kind     {kind_},
         ratio    {ratio_},
         offset   {offset_}
     {}
+};
+
+using UnitPtr = shared_ptr<Unit>;
+
+struct UnitKind
+{
+    string str {};
+    string base_unit_str {};
+    string default_unit_str {};
+    UnitPtr base_unit {};
+    UnitPtr default_unit {};
+};
+
+struct UnitSet
+{
+    unordered_map<string, UnitKindPtr> kinds {};
+    unordered_map<string, UnitPtr> units {};
+
+    UnitSet() = default;
+
+    UnitPtr add_unit(const string& unit_str,
+                     UnitKindPtr   unit_kind,
+                     double        unit_ratio = 1.0,
+                     double        unit_offset = 0.0);
+
+    UnitPtr add_unit(const string& unit_str,
+                     const string& unit_kind_str,
+                     double        unit_ratio = 1.0,
+                     double        unit_offset = 0.0) {
+                        return add_unit(unit_str, kinds[unit_kind_str], unit_ratio, unit_offset);
+                    }
+
+    UnitKindPtr add_kind(const string& unit_kind_str,
+                         const string& base_unit_str,
+                         const string& default_unit_str = "");
+
+    UnitPtr get_default_unit(const string& unit_kind_str) {
+        return kinds[unit_kind_str]->default_unit;
+    }
 };
 
 //---------------------------------------------------------
@@ -64,25 +107,26 @@ public:
     double       value {0.0};
     Ndouble      lower {};
     Ndouble      upper {};
-    Unit         unit  {"none"};
+    UnitPtr      unit  {};
     VariableSpec spec  {VariableSpec::Free};
 
-    Variable(const string& name_ = "unnamed",
-             const Unit& unit_   = Unit("none")) :
+    Variable() = default;
+    Variable(const string& name_,
+             UnitPtr unit_) :
         name {name_},
         unit {unit_}
     {}
 
     void      fix() {spec = VariableSpec::Fixed;}
-    double    to_base() const {return value * unit.ratio + unit.offset;}
-    double    to_base(double value_) const {return value_ * unit.ratio + unit.offset;}
-    Variable& from_base(double base_value) {value = (base_value - unit.offset) / unit.ratio; return *this;}
+    double    to_base() const {return value * unit->ratio + unit->offset;}
+    double    to_base(double value_) const {return value_ * unit->ratio + unit->offset;}
+    Variable& from_base(double base_value) {value = (base_value - unit->offset) / unit->ratio; return *this;}
     //double from_base(double base_value, const Unit& u) const {return (base_value - u.offset) / u.ratio;}
     //double convert(const Unit& u) const {return from_base(to_base(value), u);}
     //double convert(double value_, const Unit& u) const {return from_base(to_base(value_), u);}
 
     string to_str() {return format("{:32}|{}|{}|{}|{}|{:8}|", name, str(spec), str(value),
-        str(lower), str(upper), unit.str);}
+        str(lower), str(upper), unit->str);}
     Variable& operator=(const double& val) {value = val; return *this;}
     operator double() const {return to_base();}
 };
@@ -299,23 +343,23 @@ class Model : public TNLP
 public:
     string name;
     FlowsheetPtr index_fs {};
-    unordered_map<string, Unit> unit_set {};
+    UnitSet unit_set {};
     vector<VariablePtr> x_vec {};
     unordered_map<string, VariablePtr> x_map {};
     vector<ConstraintPtr> g_vec {};
     unordered_map<string, ConstraintPtr> g_map {};
     vector<JacobianElementPtr> J {};
     std::map<std::pair<Index, Index>, vector<HessianElementPtr>> H {};
+    bool printiterate {true};
 
-    Model(const string& name_, const unordered_map<string, Unit>& unit_set_) :
+    Model(const string& name_, const UnitSet& unit_set_) :
         name(name_),
         unit_set(unit_set_)
     {
         index_fs = make_shared<Flowsheet>("index", this, nullptr);
-        bool printiterate = true;
     }
 
-    VariablePtr        add_variable(const string &name_, const Unit &unit);
+    VariablePtr        add_variable(const string &name_, UnitPtr unit);
     ConstraintPtr      add_constraint(const string& name_);
     JacobianElementPtr add_jacobian_element(const ConstraintPtr& con, const VariablePtr& var);
     HessianElementPtr  add_hessian_element(const ConstraintPtr& con, const VariablePtr& var1, const VariablePtr& var2);

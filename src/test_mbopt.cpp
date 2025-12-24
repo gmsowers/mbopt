@@ -1,6 +1,6 @@
 #include <iostream>
+#include "lua_interface.hpp"
 #include "IpIpoptApplication.hpp"
-#include "Model.hpp"
 #include "Mixer.hpp"
 
 using Ipopt::SmartPtr;
@@ -10,10 +10,16 @@ using Ipopt::Solve_Succeeded;
 
 int main()
 {
-    std::unordered_map<std::string, Unit> unit_set {};
+    lua_start();
+    lua_run_script("model.lua");
+    
+#ifdef UNDEF    
+    UnitSet unit_set {"metric"};
+    auto kind_massflow = unit_set.add_kind("massflow", "kg/hr", "kg/hr");
+    auto kind_massfrac = unit_set.add_kind("massfrac", "frac", "frac");
 
-    unit_set["massflow"] = {"kg/hr", "kg/hr", 1.0};
-    unit_set["massfrac"] = {"frac", "frac", 1.0};
+    unit_set.add_unit("kg/hr", kind_massflow, 1.0);
+    unit_set.add_unit("frac", kind_massfrac, 1.0);
 
     SmartPtr<Model> M = new Model("mixer_test", unit_set);
 
@@ -39,7 +45,6 @@ int main()
     M->var("mix1.N2.mass_CO")->upper = 1000.0;
 
     M->print_variables();
-#ifdef UNDEF    
     for (Index i = 0; const auto var : M->x_vec)
         std::cout << i++ << " " << var->name << " = " << var->value << "    " << (var->spec == VariableSpec::Fixed ? "Fixed" : "") << '\n';
 
