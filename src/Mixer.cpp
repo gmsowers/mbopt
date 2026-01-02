@@ -2,7 +2,7 @@
 #include <iostream>
 #include "Mixer.hpp"
 
-Mixer::Mixer(const std::string&            name_,
+Mixer::Mixer(string_view                   name_,
              FlowsheetPtr                  fs_,
              const std::vector<StreamPtr>& inlets_,
              const std::vector<StreamPtr>& outlets_): Block(name_, fs_, inlets_, outlets_)
@@ -10,7 +10,7 @@ Mixer::Mixer(const std::string&            name_,
     const auto& sout = outlets[0];
     auto m = fs->m;
 
-    Comps inlet_comps_union {};
+    vector<string> inlet_comps_union {};
     for (const auto& sin : inlets)
         inlet_comps_union += sin->comps;
     assert(inlet_comps_union == sout->comps);
@@ -78,7 +78,7 @@ void Mixer::initialize() {
         for (const auto& sin : inlets)
             if (x_strm[sin].mass.contains(compID))
                 base_val += *x_strm[sin].mass[compID];
-        x_strm[sout].mass[compID]->from_base(base_val);
+        x_strm[sout].mass[compID]->convert_and_set(base_val);
     }
 
     // Calculate total mass flow rates, mix1.Si.mass == \sum_{Cj in comps}(mix1.Si.mass_Cj) for Si in streams.
@@ -86,22 +86,22 @@ void Mixer::initialize() {
         double base_val = 0.0;
         for (const auto& compID : sin->comps)
             base_val += *x_strm[sin].mass[compID];
-        x_strm[sin].total_mass->from_base(base_val);
+        x_strm[sin].total_mass->convert_and_set(base_val);
     }
     {
         double base_val = 0.0;
         for (const auto& compID : sout->comps)
             base_val += *x_strm[sout].mass[compID];
-        x_strm[sout].total_mass->from_base(base_val);
+        x_strm[sout].total_mass->convert_and_set(base_val);
     }
 
     // Calculate mass fractions, mix1.Si.massfrac_Cj = mix1.Si.mass_Cj / mix1.Si.mass
     //    for Si in streams, Cj in comps.
     for (const auto& sin : inlets)
         for (const auto& compID : sin->comps)
-            x_strm[sin].massfrac[compID]->from_base(*x_strm[sin].mass[compID] / *x_strm[sin].total_mass);
+            x_strm[sin].massfrac[compID]->convert_and_set(*x_strm[sin].mass[compID] / *x_strm[sin].total_mass);
     for (const auto& compID : sout->comps)
-        x_strm[sout].massfrac[compID]->from_base(*x_strm[sout].mass[compID] / *x_strm[sout].total_mass);
+        x_strm[sout].massfrac[compID]->convert_and_set(*x_strm[sout].mass[compID] / *x_strm[sout].total_mass);
 
 }
 

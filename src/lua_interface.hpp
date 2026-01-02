@@ -1,10 +1,6 @@
+#pragma once
 #include <sol/sol.hpp>
-#include "Model.hpp"
+#include <string>
 
 void lua_start();
-void lua_run_script(string script_file_name);
-
-ModelPtr lua_new_model(string model_name, sol::table lua_unit_set);
-void lua_test_model(ModelPtr m);
-
-
+void lua_run_script(std::string script_file_name);

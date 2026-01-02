@@ -1,19 +1,21 @@
 #pragma once
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <format>
 #include <vector>
-#include <set>
 #include <unordered_map>
 #include <map>
 #include <utility>
 #include <optional>
 #include <memory>
-#include "IpTNLP.hpp"
+#include <concepts>
+#include "IpIpoptApplication.hpp"
 
 #define NO_BOUND 1.0e20;
 
 using std::string;
+using std::string_view;
 using std::vector;
 using std::unordered_map;
 using std::shared_ptr;
@@ -22,12 +24,14 @@ using std::format;
 using std::ostream;
 using std::cout;
 
+using Ipopt::SmartPtr;
 using Ipopt::TNLP;
 using Ipopt::Index;
 using Ipopt::Number;
 using Ipopt::IpoptData;
 using Ipopt::IpoptCalculatedQuantities;
 using Ipopt::SolverReturn;
+using Ipopt::IpoptApplication;
 
 struct UnitKind;
 using UnitKindPtr = shared_ptr<UnitKind>;
@@ -40,10 +44,10 @@ struct Unit
     double offset    {0.0};
 
     Unit() = default;
-    Unit(const string& str_,
-         UnitKindPtr   kind_,
-         double        ratio_    = 1.0,
-         double        offset_   = 0.0) :
+    Unit(string_view str_,
+         UnitKindPtr kind_,
+         double      ratio_    = 1.0,
+         double      offset_   = 0.0) :
         str      {str_},
         kind     {kind_},
         ratio    {ratio_},
@@ -55,17 +59,17 @@ using UnitPtr = shared_ptr<Unit>;
 
 struct UnitKind
 {
-    string str {};
-    string base_unit_str {};
-    string default_unit_str {};
-    UnitPtr base_unit {};
-    UnitPtr default_unit {};
+    string  str              {};
+    string  base_unit_str    {};
+    string  default_unit_str {};
+    UnitPtr base_unit        {};
+    UnitPtr default_unit     {};
 };
 
 struct UnitSet
 {
     unordered_map<string, UnitKindPtr> kinds {};
-    unordered_map<string, UnitPtr> units {};
+    unordered_map<string, UnitPtr>     units {};
 
     UnitSet() = default;
 
@@ -111,24 +115,38 @@ public:
     VariableSpec spec  {VariableSpec::Free};
 
     Variable() = default;
-    Variable(const string& name_,
-             UnitPtr unit_) :
+    Variable(string_view name_,
+             UnitPtr     unit_) :
         name {name_},
         unit {unit_}
     {}
 
-    void      fix() {spec = VariableSpec::Fixed;}
-    double    to_base() const {return value * unit->ratio + unit->offset;}
-    double    to_base(double value_) const {return value_ * unit->ratio + unit->offset;}
-    Variable& from_base(double base_value) {value = (base_value - unit->offset) / unit->ratio; return *this;}
-    //double from_base(double base_value, const Unit& u) const {return (base_value - u.offset) / u.ratio;}
-    //double convert(const Unit& u) const {return from_base(to_base(value), u);}
-    //double convert(double value_, const Unit& u) const {return from_base(to_base(value_), u);}
+    void   fix()
+        {spec = VariableSpec::Fixed;}
+    double convert_to_base() const
+        {return value * unit->ratio + unit->offset;}
+    double convert_to_base(double value_) const
+        {return value_ * unit->ratio + unit->offset;}
+    double convert_to_base(double value_, const UnitPtr& u) const
+        {return value_ * u->ratio + u->offset;}
+    double convert_from_base(double base_value) const
+        {return (base_value - unit->offset) / unit->ratio;}
+    void   convert_and_set(double base_value)
+        {value = (base_value - unit->offset) / unit->ratio;}
+    void   convert_and_set(double value_, const UnitPtr& u)
+        {value = convert_from_base(convert_to_base(value_, u));}
+    double convert(double value_, const UnitPtr& u) const
+        {return (u == unit ? value_ : convert_from_base(convert_to_base(value_, u)));}
 
-    string to_str() {return format("{:32}|{}|{}|{}|{}|{:8}|", name, str(spec), str(value),
-        str(lower), str(upper), unit->str);}
-    Variable& operator=(const double& val) {value = val; return *this;}
-    operator double() const {return to_base();}
+    string to_str() const
+        {return format("{:32}|{}|{}|{}|{}|{:8}|", name, str(spec), str(value),
+            str(lower), str(upper), unit->str);}
+    
+    Variable& operator=(const double& val)
+        {value = val; return *this;}
+    
+    operator double() const
+        {return convert_to_base();}
 };
 
 using VariablePtr = shared_ptr<Variable>;
@@ -143,11 +161,11 @@ struct Constraint
     string name  {};
     double value {0.0};
 
-    Constraint(const string& name_ = "") :
+    Constraint(string_view name_ = "") :
         name {name_}
     {}
 
-    Constraint& operator=(const double& val) {value = val; return *this;}
+    Constraint& operator=(const double& val)  {value = val;  return *this;}
     Constraint& operator+=(const double& val) {value += val; return *this;}
     Constraint& operator-=(const double& val) {value -= val; return *this;}
 };
@@ -159,8 +177,8 @@ using ConstraintPtr = shared_ptr<Constraint>;
 struct JacobianElement
 {
     ConstraintPtr con;
-    VariablePtr var;
-    double value {};
+    VariablePtr   var;
+    double value  {};
 
     JacobianElement(ConstraintPtr con_ = nullptr,
                     VariablePtr   var_ = nullptr) :
@@ -178,9 +196,9 @@ using JacobianElementPtr = shared_ptr<JacobianElement>;
 struct HessianElement
 {
     ConstraintPtr con;
-    VariablePtr var1;
-    VariablePtr var2;
-    double value {};
+    VariablePtr   var1;
+    VariablePtr   var2;
+    double value  {};
 
     HessianElement(ConstraintPtr con_  = nullptr,
                    VariablePtr   var1_ = nullptr,
@@ -202,34 +220,32 @@ class Flowsheet;
 using ModelPtr = Model*;
 using BlockPtr = shared_ptr<Block>;
 using FlowsheetPtr = shared_ptr<Flowsheet>;
-using CompID = string;
-using Comps = vector<CompID>;
 
-Comps operator+(const Comps& c1, const Comps& c2);
-Comps& operator+=(Comps& c1, const Comps& c2);
+vector<string> operator+(const vector<string>& c1, const vector<string>& c2);
+vector<string>& operator+=(vector<string>& c1, const vector<string>& c2);
 
 //---------------------------------------------------------
 
 struct Stream 
 {
-    string       name;
-    FlowsheetPtr fs;
-    Comps        comps {};
-    BlockPtr     to    {};
-    BlockPtr     from  {};
+    string         name;
+    FlowsheetPtr   fs;
+    vector<string> comps {};
+    BlockPtr       to    {};
+    BlockPtr       from  {};
 
     Stream() = default;
-    Stream(const string& name_,
-           FlowsheetPtr  fs_, 
-           const Comps&  comps_) :
+    Stream(string_view            name_,
+           FlowsheetPtr           fs_, 
+           const vector<string>&  comps_) :
         name  {name_},
         fs    {fs_},
         comps {comps_}
     {}
 
-    bool has_comp(const CompID& compID) const
+    bool has_comp(string_view compID) const
     {
-        return std::find(comps.begin(), comps.end(), compID) != comps.end();
+        return std::ranges::find(comps, compID) != comps.end();
     }
 };
 
@@ -240,8 +256,8 @@ using StreamPtr = shared_ptr<Stream>;
 struct StreamVars
 {
     VariablePtr                        total_mass {};
-    unordered_map<CompID, VariablePtr> mass       {};
-    unordered_map<CompID, VariablePtr> massfrac   {};
+    unordered_map<string, VariablePtr> mass       {};
+    unordered_map<string, VariablePtr> massfrac   {};
 };
 
 //---------------------------------------------------------
@@ -261,19 +277,21 @@ public:
     vector<HessianElementPtr>            H       {};
 
     Block() = default;
-    Block(const string&            name_,
+    Block(string_view              name_,
           FlowsheetPtr             fs_,
           const vector<StreamPtr>& inlets_,
           const vector<StreamPtr>& outlets_);
-    virtual ~Block() = default;
-    virtual void initialize() = 0;
+    virtual ~Block()                = default;
+    virtual void initialize()       = 0;
     virtual void eval_constraints() = 0;
-    virtual void eval_jacobian() = 0;
-    virtual void eval_hessian() = 0;
-
+    virtual void eval_jacobian()    = 0;
+    virtual void eval_hessian()     = 0;
+    
+    void show_variables(ostream& os = cout);
+    
 private:
     void make_stream_variables(const StreamPtr& strm);
-    void make_stream_variables();
+    void make_all_stream_variables();
     void set_inlet_stream_specs();
 };
 
@@ -292,7 +310,7 @@ public:
     unordered_map<string, BlockPtr>  blocks_map;
     unordered_map<string, StreamPtr> streams;
 
-    Flowsheet(const string& name_, 
+    Flowsheet(string_view   name_, 
               ModelPtr      m_,
               FlowsheetPtr  parent_ = nullptr) :
         name   {name_},
@@ -309,66 +327,87 @@ public:
         }
     }
 
-    FlowsheetPtr add_child(const string& name_);
-    StreamPtr    add_stream(const string& name_,
-                            const Comps&  comps);
+    FlowsheetPtr add_child(string_view name_);
+    StreamPtr    add_stream(const string&          name_,
+                            const vector<string>&  comps);
 
     template<typename T, typename... blk_params_T>
-    shared_ptr<T> add_block(const string&            name_,
-                            const vector<StreamPtr>& inlets_,
-                            const vector<StreamPtr>& outlets_,
-                            blk_params_T&            ...blk_params)
-    {
+    shared_ptr<T> add_block(string_view              name_,
+                            const vector<StreamPtr>& inlet_strms,
+                            const vector<StreamPtr>& outlet_strms,
+                            blk_params_T&            ...blk_params) {
         auto fs = shared_from_this();
-        auto blk = make_shared<T>(name_, fs, inlets_, outlets_, blk_params...);
+        auto blk = make_shared<T>(name_, fs, inlet_strms, outlet_strms, blk_params...);
         fs->blocks.push_back(blk);
         fs->blocks_map[blk->name] = blk;
-        for (const auto& sin : blk->inlets)
-            sin->to = blk;
-        for (const auto& sout : blk->outlets)
-            sout->from = blk;
+        for (const auto& sin : blk->inlets)   sin->to    = blk;
+        for (const auto& sout : blk->outlets) sout->from = blk;
         return blk;
     }
 
-    void initialize();
-    void eval_constraints();
-    void eval_jacobian();
-    void eval_hessian();
+private:
+    template <typename T>
+    void eval(T feval) {
+        for (const auto& blk : blocks)   feval(blk);
+        for (const auto& fs  : children) feval(fs);
+    }
+
+public:
+    void initialize()       { eval([](const auto& ptr) { ptr->initialize(); }); }
+    void eval_constraints() { eval([](const auto& ptr) { ptr->eval_constraints(); }); }
+    void eval_jacobian()    { eval([](const auto& ptr) { ptr->eval_jacobian(); }); }
+    void eval_hessian()     { eval([](const auto& ptr) { ptr->eval_hessian(); }); }
 };
 
+
 //---------------------------------------------------------
+
+using IpoptApplicationPtr = IpoptApplication*;
 
 class Model : public TNLP
 {
 public:
-    string name;
-    FlowsheetPtr index_fs {};
-    UnitSet unit_set {};
-    vector<VariablePtr> x_vec {};
-    unordered_map<string, VariablePtr> x_map {};
-    vector<ConstraintPtr> g_vec {};
-    unordered_map<string, ConstraintPtr> g_map {};
-    vector<JacobianElementPtr> J {};
-    std::map<std::pair<Index, Index>, vector<HessianElementPtr>> H {};
-    bool printiterate {true};
+    string                               name;
+    FlowsheetPtr                         index_fs;
+    UnitSet                              unit_set;
+    vector<VariablePtr>                  x_vec;
+    unordered_map<string, VariablePtr>   x_map;
+    vector<ConstraintPtr>                g_vec;
+    unordered_map<string, ConstraintPtr> g_map;
+    vector<JacobianElementPtr>           J;
+    std::map<std::pair<Index, Index>,
+             vector<HessianElementPtr>>  H;
+    IpoptApplicationPtr                  solver;
+    bool                                 printiterate {true};
 
-    Model(const string& name_, const UnitSet& unit_set_) :
-        name(name_),
-        unit_set(unit_set_)
+    Model(string_view    name_,
+          string_view    index_fs_name, 
+          const UnitSet& unit_set_) :
+        name     {name_},
+        unit_set {unit_set_}
     {
-        index_fs = make_shared<Flowsheet>("index", this, nullptr);
+        index_fs = make_shared<Flowsheet>(index_fs_name, this, nullptr);
+        solver = new IpoptApplication();
+    }
+    ~Model() {
+        delete solver;
     }
 
-    VariablePtr        add_variable(const string &name_, UnitPtr unit);
-    ConstraintPtr      add_constraint(const string& name_);
-    JacobianElementPtr add_jacobian_element(const ConstraintPtr& con, const VariablePtr& var);
-    HessianElementPtr  add_hessian_element(const ConstraintPtr& con, const VariablePtr& var1, const VariablePtr& var2);
-    void               initialize() {index_fs->initialize();};
-    void               eval_constraints() {index_fs->eval_constraints();};
-    void               eval_jacobian() {index_fs->eval_jacobian();};
-    void               eval_hessian() {index_fs->eval_hessian();};
-    void               print_variables(ostream& os = cout);
-    VariablePtr        var(const string& name_) {return x_map.contains(name_) ? x_map[name_] : nullptr;};
+    VariablePtr        add_variable(string_view name_, const UnitPtr& unit);
+    ConstraintPtr      add_constraint(string_view name_);
+    JacobianElementPtr add_jacobian_element(const ConstraintPtr& con,
+                                            const VariablePtr&   var);
+    HessianElementPtr  add_hessian_element(const ConstraintPtr& con,
+                                           const VariablePtr&   var1,
+                                           const VariablePtr&   var2);
+    void               initialize()       { index_fs->initialize();       };
+    void               eval_constraints() { index_fs->eval_constraints(); };
+    void               eval_jacobian()    { index_fs->eval_jacobian();    };
+    void               eval_hessian()     { index_fs->eval_hessian();     };
+    void               show_variables(ostream& os = cout);
+    VariablePtr        var(const string& name_) const {
+        return x_map.contains(name_) ? x_map.at(name_) : nullptr;
+    };
     
     virtual bool get_nlp_info(
         Index&          n,
@@ -452,6 +491,3 @@ public:
         IpoptCalculatedQuantities* ip_cq) override;
 
 };
-
-//---------------------------------------------------------
-

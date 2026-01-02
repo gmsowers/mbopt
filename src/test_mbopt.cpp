@@ -1,12 +1,7 @@
 #include <iostream>
 #include "lua_interface.hpp"
-#include "IpIpoptApplication.hpp"
+#include "Model.hpp"
 #include "Mixer.hpp"
-
-using Ipopt::SmartPtr;
-using Ipopt::IpoptApplication;
-using Ipopt::ApplicationReturnStatus;
-using Ipopt::Solve_Succeeded;
 
 int main()
 {
@@ -14,24 +9,24 @@ int main()
     lua_run_script("model.lua");
     
 #ifdef UNDEF    
-    UnitSet unit_set {"metric"};
+    UnitSet unit_set {};
     auto kind_massflow = unit_set.add_kind("massflow", "kg/hr", "kg/hr");
     auto kind_massfrac = unit_set.add_kind("massfrac", "frac", "frac");
 
     unit_set.add_unit("kg/hr", kind_massflow, 1.0);
     unit_set.add_unit("frac", kind_massfrac, 1.0);
 
-    SmartPtr<Model> M = new Model("mixer_test", unit_set);
+    SmartPtr<Model> M = new Model("mixer_test", "index", unit_set);
 
     auto fs = M->index_fs;
 
-    Comps c {"H2", "O2"};
+    vector<string> c {"H2", "O2"};
     auto sin1 = fs->add_stream("N1", c);
 
-    Comps c2 {"H2", "O2", "CO"};
+    vector<string> c2 {"H2", "O2", "CO"};
     auto sin2 = fs->add_stream("N2", c2);
 
-    Comps cmix {c + c2};
+    vector<string> cmix {c + c2};
     auto sout = fs->add_stream("OUT", cmix);
 
     auto mix1 = fs->add_block<Mixer>("mix1", {sin1, sin2}, {sout});
@@ -44,7 +39,7 @@ int main()
     M->var("mix1.N2.mass_CO")->lower = 0.0;
     M->var("mix1.N2.mass_CO")->upper = 1000.0;
 
-    M->print_variables();
+    M->show_variables();
     for (Index i = 0; const auto var : M->x_vec)
         std::cout << i++ << " " << var->name << " = " << var->value << "    " << (var->spec == VariableSpec::Fixed ? "Fixed" : "") << '\n';
 
