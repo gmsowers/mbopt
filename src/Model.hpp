@@ -9,10 +9,9 @@
 #include <utility>
 #include <optional>
 #include <memory>
-#include <concepts>
 #include "IpIpoptApplication.hpp"
 
-#define NO_BOUND 1.0e20;
+#define NO_BOUND 1.0e20
 
 using std::string;
 using std::string_view;
@@ -23,6 +22,7 @@ using std::make_shared;
 using std::format;
 using std::ostream;
 using std::cout;
+using std::cerr;
 
 using Ipopt::SmartPtr;
 using Ipopt::TNLP;
@@ -94,7 +94,12 @@ struct UnitSet
     }
 };
 
+using UnitSetPtr = shared_ptr<UnitSet>;
+
 //---------------------------------------------------------
+
+class Model;
+using ModelPtr = Model*;
 
 enum class VariableSpec { Fixed, Free };
 using Ndouble = std::optional<double>;
@@ -123,7 +128,10 @@ public:
 
     void   fix()
         {spec = VariableSpec::Fixed;}
-    double convert_to_base() const
+    void   free()
+        {spec = VariableSpec::Free;}
+
+        double convert_to_base() const
         {return value * unit->ratio + unit->offset;}
     double convert_to_base(double value_) const
         {return value_ * unit->ratio + unit->offset;}
@@ -138,13 +146,15 @@ public:
     double convert(double value_, const UnitPtr& u) const
         {return (u == unit ? value_ : convert_from_base(convert_to_base(value_, u)));}
 
+    Ndouble change_unit(ModelPtr m, const string& new_unit_str);
+
     string to_str() const
         {return format("{:32}|{}|{}|{}|{}|{:8}|", name, str(spec), str(value),
             str(lower), str(upper), unit->str);}
-    
+
     Variable& operator=(const double& val)
         {value = val; return *this;}
-    
+
     operator double() const
         {return convert_to_base();}
 };
@@ -213,11 +223,9 @@ struct HessianElement
 
 using HessianElementPtr = shared_ptr<HessianElement>;
 
-class Model;
 class Block;
 class Flowsheet;
 
-using ModelPtr = Model*;
 using BlockPtr = shared_ptr<Block>;
 using FlowsheetPtr = shared_ptr<Flowsheet>;
 
@@ -226,7 +234,7 @@ vector<string>& operator+=(vector<string>& c1, const vector<string>& c2);
 
 //---------------------------------------------------------
 
-struct Stream 
+struct Stream
 {
     string         name;
     FlowsheetPtr   fs;
@@ -236,7 +244,7 @@ struct Stream
 
     Stream() = default;
     Stream(string_view            name_,
-           FlowsheetPtr           fs_, 
+           FlowsheetPtr           fs_,
            const vector<string>&  comps_) :
         name  {name_},
         fs    {fs_},
@@ -286,9 +294,9 @@ public:
     virtual void eval_constraints() = 0;
     virtual void eval_jacobian()    = 0;
     virtual void eval_hessian()     = 0;
-    
+
     void show_variables(ostream& os = cout);
-    
+
 private:
     void make_stream_variables(const StreamPtr& strm);
     void make_all_stream_variables();
@@ -310,7 +318,7 @@ public:
     unordered_map<string, BlockPtr>  blocks_map;
     unordered_map<string, StreamPtr> streams;
 
-    Flowsheet(string_view   name_, 
+    Flowsheet(string_view   name_,
               ModelPtr      m_,
               FlowsheetPtr  parent_ = nullptr) :
         name   {name_},
@@ -381,7 +389,7 @@ public:
     bool                                 printiterate {true};
 
     Model(string_view    name_,
-          string_view    index_fs_name, 
+          string_view    index_fs_name,
           const UnitSet& unit_set_) :
         name     {name_},
         unit_set {unit_set_}
@@ -408,7 +416,7 @@ public:
     VariablePtr        var(const string& name_) const {
         return x_map.contains(name_) ? x_map.at(name_) : nullptr;
     };
-    
+
     virtual bool get_nlp_info(
         Index&          n,
         Index&          m,
@@ -434,7 +442,7 @@ public:
         Index   m,
         bool    init_lambda,
         Number* lambda) override;
-      
+
    virtual bool eval_f(
         Index         n,
         const Number* x_in,
@@ -453,7 +461,7 @@ public:
         bool          new_x,
         Index         m,
         Number*       g_values) override;
-     
+
    virtual bool eval_jac_g(
         Index         n,
         const Number* x_in,
@@ -463,7 +471,7 @@ public:
         Index*        iRow,
         Index*        jCol,
         Number*       values) override;
-   
+
    virtual bool eval_h(
         Index         n,
         const Number* x_in,
@@ -476,7 +484,7 @@ public:
         Index*        iRow,
         Index*        jCol,
         Number*       values) override;
-  
+
     virtual void finalize_solution(
         SolverReturn               status,
         Index                      n,

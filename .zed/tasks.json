@@ -1,0 +1,27 @@
+[
+  {
+    "label": "CMake Configure",
+    "command": "cmake -B build-macos -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+    "use_new_terminal": false,
+  },
+  {
+    "label": "CMake Build",
+    "command": "cmake --build build-macos",
+    "use_new_terminal": false,
+  },
+  {
+    "label": "CMake Clean",
+    "command": "cmake --build build-macos --target clean",
+    "use_new_terminal": false,
+  },
+  {
+    "label": "CMake Build (Release)",
+    "command": "cmake -B build-macos -DCMAKE_BUILD_TYPE=Release && cmake --build build-macos",
+    "use_new_terminal": false,
+  },
+  {
+    "label": "Run without debugging",
+    "command": "./build-macos/test_mbopt",
+    "use_new_terminal": false,
+  },
+]

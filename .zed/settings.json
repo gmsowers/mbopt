@@ -1,0 +1,12 @@
+{
+  "lsp": {
+    "clangd": {
+      "binary": {
+        "arguments": [
+          "--compile-commands-dir=build-macos",
+          "--background-index",
+        ],
+      },
+    },
+  },
+}

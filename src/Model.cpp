@@ -47,6 +47,26 @@ UnitKindPtr UnitSet::add_kind(const string& unit_kind_str,
 
 //---------------------------------------------------------
 
+Ndouble Variable::change_unit(ModelPtr m, const string& new_unit_str) {
+    if (new_unit_str == unit->str) return std::nullopt;
+    if (!m->unit_set.units.contains(new_unit_str)) {
+        cerr << "error: failed to change the units of variable \"" << name << "\". The new unit \"" << new_unit_str << "\" is not in the unit set.\n";
+        return std::nullopt;
+    }
+    auto new_unit = m->unit_set.units[new_unit_str];
+    if (new_unit->kind != unit->kind) {
+        cerr << "error: failed to change the units of variable \"" << name << "\". The new unit \"" << new_unit_str << "\" is the wrong kind.\n";
+        cerr << "       variable \"" << name << "\" has kind \"" << unit->kind->str << "\", but \"" << new_unit_str << "\" has kind \"" << new_unit->kind->str << '\n';
+        return std::nullopt;
+    }
+    auto old_unit = unit;
+    unit = new_unit;
+    convert_and_set(value, old_unit);
+    return value;
+}
+
+//---------------------------------------------------------
+
 FlowsheetPtr Flowsheet::add_child(string_view name_) {
     auto parent = shared_from_this();
     auto fs = make_shared<Flowsheet>(name_, parent->m, parent);
@@ -63,7 +83,7 @@ StreamPtr Flowsheet::add_stream(const string& name_, const vector<string>& comps
 
 char const* var_header = R"(
               Name               Fix      Value          Lower          Upper      Units
---------------------------------|---|--------------|--------------|--------------|--------|              
+--------------------------------|---|--------------|--------------|--------------|--------|
 )";
 
 //---------------------------------------------------------
@@ -107,7 +127,7 @@ void Block::make_stream_variables(const StreamPtr& strm)
     c_prefix = s_prefix + "massfrac_";
     for (const auto& c : strm->comps)
         x.push_back(strm_vars.massfrac[c] = m->add_variable(c_prefix + c, u_massfrac));
-    
+
     x_strm[strm] = strm_vars;
 }
 
@@ -198,7 +218,7 @@ bool Model::get_bounds_info(
         }
         i++;
     }
-    
+
     for (Index i = 0; i < m; i++)
         g_l[i] = g_u[i] = 0.0;
 
@@ -222,7 +242,7 @@ bool Model::get_starting_point(
     for (Index i = 0; const auto var : x_vec)
         x_init[i++] = *var;
 
-    return true;    
+    return true;
 }
 
 bool Model::eval_f(
@@ -243,7 +263,7 @@ bool Model::eval_grad_f(
 {
     for (Index i = 0; i < n; i++)
         grad_f[i] = 0.0;
-        
+
     return true;
 }
 
@@ -323,7 +343,7 @@ bool Model::eval_h(
             i++;
         }
     }
-        
+
     return true;
 }
 

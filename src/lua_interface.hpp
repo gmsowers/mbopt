@@ -1,6 +1,12 @@
 #pragma once
+#define SOL_ALL_SAFETIES_ON 1
 #include <sol/sol.hpp>
 #include <string>
 
-void lua_start();
-void lua_run_script(std::string script_file_name);
+struct LuaResult {
+    bool ok {true};
+    std::string err_str {};
+};
+
+void lua_init();
+LuaResult lua_run_script(std::string script_file_name);
