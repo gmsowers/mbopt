@@ -131,7 +131,7 @@ public:
     void   free()
         {spec = VariableSpec::Free;}
 
-        double convert_to_base() const
+    double convert_to_base() const
         {return value * unit->ratio + unit->offset;}
     double convert_to_base(double value_) const
         {return value_ * unit->ratio + unit->offset;}

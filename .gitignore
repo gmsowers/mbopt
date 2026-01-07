@@ -1,5 +1,6 @@
 .vscode/
 .vs/
+.zed/
 build-macos/
 build-windows/
 build-linux/

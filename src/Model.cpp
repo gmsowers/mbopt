@@ -50,13 +50,13 @@ UnitKindPtr UnitSet::add_kind(const string& unit_kind_str,
 Ndouble Variable::change_unit(ModelPtr m, const string& new_unit_str) {
     if (new_unit_str == unit->str) return std::nullopt;
     if (!m->unit_set.units.contains(new_unit_str)) {
-        cerr << "error: failed to change the units of variable \"" << name << "\". The new unit \"" << new_unit_str << "\" is not in the unit set.\n";
+        cerr << "Error in ChangeUnit(\"" << name << "\", \"" << new_unit_str << "\"). The new unit \"" << new_unit_str << "\" is not in the unit set.\n";
         return std::nullopt;
     }
     auto new_unit = m->unit_set.units[new_unit_str];
     if (new_unit->kind != unit->kind) {
-        cerr << "error: failed to change the units of variable \"" << name << "\". The new unit \"" << new_unit_str << "\" is the wrong kind.\n";
-        cerr << "       variable \"" << name << "\" has kind \"" << unit->kind->str << "\", but \"" << new_unit_str << "\" has kind \"" << new_unit->kind->str << '\n';
+        cerr << "Error in ChangeUnit(\"" << name << "\", \"" << new_unit_str << "\"). The new unit \"" << new_unit_str << "\" is the wrong kind.\n";
+        cerr << "      \"" << name << "\" has kind \"" << unit->kind->str << "\", but \"" << new_unit_str << "\" has kind \"" << new_unit->kind->str << ".\"\n";
         return std::nullopt;
     }
     auto old_unit = unit;

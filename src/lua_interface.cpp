@@ -10,13 +10,37 @@ using sol::lua_nil;
 
 static sol::state lua;
 
-string trim(string_view s) {
+string remove_ws(string_view s) {
     string res {};
     for (const auto& c : s) {
         if (c == ' ' || c == '\t' || c == '\n')
             continue;
         res += c;
     }
+    return res;
+}
+
+string trim(string_view s) {
+    auto len = s.size();
+    auto beg = len;
+    for (int i = 0; i < len; i++) {
+        auto c = s[i];
+        if (c != ' ' && c != '\t' && c != '\n') {
+            beg = i;
+            break;
+        }
+    }
+    auto end = len - 1;
+    for (int i = end; i >= beg; i--) {
+        auto c = s[i];
+        if (c != ' ' && c != '\t' && c != '\n') {
+            end = i;
+            break;
+        }
+    }
+    string res {};
+    for (int i = beg; i <= end; i++)
+        res += s[i];
     return res;
 }
 
@@ -40,7 +64,7 @@ UnitSetPtr lua_unit_set(sol::table lua_unit_set) {
     auto u = make_shared<UnitSet>();
 
     if (!lua_unit_set["kinds"].valid()) {
-        cerr << "UnitSet: No \"kinds\" key found in table\n";
+        cerr << "Error in UnitSet: No \"kinds\" key found in table.\n";
         return nullptr;
     }
 
@@ -50,14 +74,14 @@ UnitSetPtr lua_unit_set(sol::table lua_unit_set) {
     }
 
     if (!lua_unit_set["units"].valid()) {
-        cerr << "UnitSet: No \"units\" key found in table\n";
+        cerr << "Error in UnitSet: No \"units\" key found in table.\n";
         return nullptr;
     }
 
     for (const auto& [k, v] : lua_unit_set.get<sol::table>("units")) {
         string kind_str = k.as<string>();
         if (!u->kinds.contains(kind_str)) {
-            cerr << "UnitSet: No kind \"" << kind_str << "\" found in table\n";
+            cerr << "Error in UnitSet: No kind \"" << kind_str << "\" found in table.\n";
             return nullptr;
         }
         auto kind = u->kinds[kind_str];
@@ -126,16 +150,18 @@ BlockPtr lua_add_Mixer(string name, vector<StreamPtr> inlets, StreamPtr outlet) 
     return blk_ptr;
 }
 
-std::regex re_binop(R"((\S+)(=|<|>)([^\s_]+)(?:_(\S+))?)");
+const std::regex re_binop(R"((\S+)(=|<|>)([^\s_]+)(?:_(\S+))?)");
 
-void lua_set(string expressions) {
+bool lua_set(string expressions) {
     std::istringstream expr_stream {expressions};
     ModelPtr M = lua["M"];
-    if (M == nullptr) return;
+    if (M == nullptr) return false;
 
+    bool ok = true;
     string expr_raw;
     while(std::getline(expr_stream, expr_raw)) {
-        string expr = trim(expr_raw);
+        string expr = remove_ws(expr_raw);
+        if (expr.empty()) continue;
         std::smatch m;
         if (std::regex_match(expr, m, re_binop)) {
             string lhs = m[1].str(),
@@ -143,8 +169,13 @@ void lua_set(string expressions) {
                    rhs = m[3].str();
 
             auto lhs_var = M->var(lhs);
+            if (lhs_var == nullptr) {
+                ok = false;
+                cerr << "Error in Set: variable \"" << lhs << "\" not found\n";
+                continue;
+            }
+            
             double rhs_value {};
-
             if (rhs == "Inf") {
                 rhs_value = NO_BOUND;
             }
@@ -153,9 +184,20 @@ void lua_set(string expressions) {
             }
             else if (is_number(rhs, rhs_value)) {
                 if (m[4].matched) {
-                    auto rhs_unit = M->unit_set.units[m[4].str()];
+                    auto rhs_unit_str = m[4].str();
+                    auto rhs_unit = (M->unit_set.units.contains(rhs_unit_str) ? M->unit_set.units[rhs_unit_str] : nullptr);
+                    if (rhs_unit == nullptr) {
+                        ok = false;
+                        cerr << "Error in Set: right-hand side unit \"" << rhs_unit_str << "\" not found.\n";
+                        continue;
+                    }
                     rhs_value = lhs_var->convert(rhs_value, rhs_unit);
                 }
+            }
+            else {
+                ok = false;
+                cerr << "Error in Set: invalid right-hand side \"" << rhs << "\".\n";
+                continue;
             }
 
             if (op == "=")
@@ -164,9 +206,47 @@ void lua_set(string expressions) {
                 lhs_var->upper = rhs_value;
             else if (op == ">")
                 lhs_var->lower = rhs_value;
-
+        }
+        else {
+            ok = false;
+            cerr << "Error in Set: invalid expression \"" << trim(expr_raw) << "\".\n";
         }
     }
+    return ok;
+}
+
+const std::regex re_spec(R"(\s*(fix|free)\s+(\S+)\s*)");
+
+bool lua_specs(string expressions) {
+    std::istringstream expr_stream {expressions};
+    ModelPtr M = lua["M"];
+    if (M == nullptr) return false;
+
+    bool ok = true;
+    string expr;
+    while(std::getline(expr_stream, expr)) {
+        string line = trim(expr);
+        if (line.empty()) continue;
+        std::smatch m;
+        if (std::regex_match(expr, m, re_spec)) {
+            string lhs = m[1].str(),
+                   rhs = m[2].str();
+
+            auto rhs_var = M->var(rhs);
+            if (rhs_var == nullptr) {
+                ok = false;
+                cerr << "Error in Specs: variable \"" << rhs << "\" not found\n";
+                continue;
+            }
+            
+            rhs_var->spec = (lhs == "free" ? VariableSpec::Free : VariableSpec::Fixed);
+        }
+        else {
+            ok = false;
+            cerr << "Error in Specs: invalid spec \"" << trim(expr) << "\". Spec must be \"fix varname\" or \"free varname\".\n";
+        }
+    }
+    return ok;
 }
 
 void lua_initialize_model() {
@@ -239,19 +319,34 @@ std::pair<Ndouble, sol::optional<string>> lua_get_value(string var_name) {
 std::pair<Ndouble, sol::optional<string>> lua_get_lower(string var_name) {
     ModelPtr M = lua["M"];
     if (M == nullptr) return {sol::nullopt, sol::nullopt};
-    if (M->x_map.contains(var_name))
-        return {M->x_map[var_name]->lower.value(),
-                M->x_map[var_name]->unit->str};
+    if (M->x_map.contains(var_name)) {
+        Ndouble val {};
+        if (M->x_map[var_name]->lower.has_value())
+            val = M->x_map[var_name]->lower.value();
+        return {val, M->x_map[var_name]->unit->str};
+    }
     return {sol::nullopt, sol::nullopt};
 }
 
 std::pair<Ndouble, sol::optional<string>> lua_get_upper(string var_name) {
     ModelPtr M = lua["M"];
     if (M == nullptr) return {sol::nullopt, sol::nullopt};
-    if (M->x_map.contains(var_name))
-        return {M->x_map[var_name]->upper.value(),
-                M->x_map[var_name]->unit->str};
+    if (M->x_map.contains(var_name)) {
+        Ndouble val {};
+        if (M->x_map[var_name]->upper.has_value())
+            val = M->x_map[var_name]->upper.value();
+        return {val, M->x_map[var_name]->unit->str};
+    }
     return {sol::nullopt, sol::nullopt};
+}
+
+sol::optional<string> lua_get_spec(string var_name) {
+    using namespace std::literals;
+    ModelPtr M = lua["M"];
+    if (M == nullptr) return sol::nullopt;
+    if (M->x_map.contains(var_name))
+        return (M->x_map[var_name]->spec == VariableSpec::Fixed ? "fixed"s : "free"s);
+    return sol::nullopt;
 }
 
 Ndouble lua_change_unit(string var_name, string new_unit_str) {
@@ -276,6 +371,7 @@ void lua_init() {
     lua.set_function("Streams", lua_add_streams);
     lua.set_function("Mixer", lua_add_Mixer);
     lua.set_function("Set", lua_set);
+    lua.set_function("Specs", lua_specs);
     lua.set_function("ShowVariables", sol::overload(lua_show_variables,
                                                     lua_show_model_variables,
                                                     lua_show_block_variables));
@@ -284,6 +380,7 @@ void lua_init() {
     lua.set_function("Val", lua_get_value);
     lua.set_function("LB", lua_get_lower);
     lua.set_function("UB", lua_get_upper);
+    lua.set_function("Spec", lua_get_spec);
     lua.set_function("ChangeUnit", lua_change_unit);
     lua.set_function("SolverOption", sol::overload(lua_set_string_solver_option,
                                                    lua_set_integer_solver_option,
