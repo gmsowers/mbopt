@@ -66,8 +66,6 @@ val, u = Val("mix1.N2.mass_CO")
 if not isapprox(val, 1.0/2.20462) then goto FAILED end
 n_test = n_test + 1
 
-InitializeModel()
-
 -- test 6: Get a variable value and unit.
 val, u = Val("mix1.N2.mass_O2")
 if not isapprox(val, 1.0) then goto FAILED end
@@ -80,6 +78,7 @@ val, u = Val("mix1.N2.mass_O2")
 if not isapprox(val, 2.20462) then goto FAILED end
 if u ~= "lb/hr" then goto FAILED end
 n_test = n_test + 1
+--val = ChangeUnit("mix1.N2.mass_O2", "kg/hr")
 
 -- test 8: Get a variable's upper bound.
 ub = UB("mix1.N2.mass_CO")
@@ -100,18 +99,20 @@ if not ok then goto FAILED end
 if Spec("mix1.N1.mass_O2") ~= "free" or Spec("mix1.N1.massfrac_O2") ~= "fixed" then goto FAILED end
 n_test = n_test + 1
 
-print(string.format("\nAll %d tests passed\n", n_test - 1))
-do return end
+Specs([[
+    fix  mix1.N1.mass_O2    
+    free mix1.N1.massfrac_O2
+]])
 
-::FAILED::
-print(string.format("\nTest %d failed\n", n_test))
-do return end
+InitializeModel()
 
---[[
+---[[
 Set("mix1.N1.mass_O2 = 2.0")
-
+ShowVariables()
 SolverOption("hessian_approximation", "exact")
-SolverOption("max_iter", 50)
+SolverOption("max_iter", 30)
+SolverOption("derivative_test", "second-order");
+
 status = InitializeSolver()
 if status ~= 0 then
     error("Solver failed to initialize")
@@ -121,3 +122,12 @@ if status ~= 0 then
     error("Solver failed to solve problem")
 end
 --]]
+
+ShowVariables()
+
+print(string.format("\nAll %d tests passed\n", n_test - 1))
+do return end
+
+::FAILED::
+print(string.format("\nTest %d failed\n", n_test))
+do return end

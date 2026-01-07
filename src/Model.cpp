@@ -138,17 +138,17 @@ void Block::make_all_stream_variables() {
 
 void Block::show_variables(ostream& os) {
     os << var_header;
-    for (const auto& var : x)
-        os << var << '\n';
+    for (const auto var : x)
+        os << *var << '\n';
 }
 
 //---------------------------------------------------------
 
-VariablePtr Model::add_variable(string_view name_, const UnitPtr& unit)
+Variable* Model::add_variable(string_view name_, const UnitPtr& unit)
 {
-    auto v = make_shared<Variable>(name_, unit);
-    v->ix = x_vec.size();
-    x_vec.push_back(v);
+    x_vec.push_back(make_unique<Variable>(name_, unit));
+    auto v = x_vec.back().get();
+    v->ix = x_vec.size() - 1;
     x_map[v->name] = v;
     return v;
 }
@@ -162,15 +162,15 @@ ConstraintPtr Model::add_constraint(string_view name_)
     return con;
 }
 
-JacobianElementPtr Model::add_jacobian_element(const ConstraintPtr& con, const VariablePtr& var) {
+JacobianElementPtr Model::add_jacobian_element(const ConstraintPtr& con, Variable* const var) {
     auto j = make_shared<JacobianElement>(con, var);
     J.push_back(j);
     return j;
 }
 
 HessianElementPtr Model::add_hessian_element(const ConstraintPtr& con,
-                                             const VariablePtr&   var1,
-                                             const VariablePtr&   var2) {
+                                             Variable* const   var1,
+                                             Variable* const   var2) {
     auto h = make_shared<HessianElement>(con, var1, var2);
     auto row_col = std::make_pair(std::max(var1->ix, var2->ix), std::min(var1->ix, var2->ix));
     H[row_col].push_back(h);
@@ -181,8 +181,8 @@ HessianElementPtr Model::add_hessian_element(const ConstraintPtr& con,
 
 void Model::show_variables(ostream& os) {
     os << var_header;
-    for (const auto var : x_vec)
-        os << var << '\n';
+    for (const auto& var : x_vec)
+        os << *var << '\n';
 }
 
 bool Model::get_nlp_info(
@@ -209,7 +209,7 @@ bool Model::get_bounds_info(
     Number* g_l,
     Number* g_u)
 {
-    for (Index i = 0; const auto var : x_vec) {
+    for (Index i = 0; const auto& var : x_vec) {
         if (var->spec == VariableSpec::Fixed)
             x_l[i] = x_u[i] = *var;
         else {
@@ -239,7 +239,7 @@ bool Model::get_starting_point(
     assert(init_z == false);
     assert(init_lambda == false);
 
-    for (Index i = 0; const auto var : x_vec)
+    for (Index i = 0; const auto& var : x_vec)
         x_init[i++] = *var;
 
     return true;
@@ -274,7 +274,7 @@ bool Model::eval_g(
     Index         m,
     Number*       g_values)
 {
-    for (Index i = 0; const auto var : x_vec) {
+    for (Index i = 0; const auto& var : x_vec) {
         var->convert_and_set(x_in[i++]);
     }
     eval_constraints();
@@ -301,7 +301,7 @@ bool Model::eval_jac_g(
             i++;
         }
     else {
-        for (Index i = 0; const auto var : x_vec)
+        for (Index i = 0; const auto& var : x_vec)
             var->convert_and_set(x_in[i++]);
         eval_jacobian();
         for (Index i = 0; const auto elem : J)
@@ -332,7 +332,7 @@ bool Model::eval_h(
             i++;
         }
     else {
-        for (Index i = 0; const auto var : x_vec)
+        for (Index i = 0; const auto& var : x_vec)
             var->convert_and_set(x_in[i++]);
         eval_hessian();
         for (Index i = 0; const auto& [idx, elems] : H) {
@@ -360,7 +360,7 @@ void Model::finalize_solution(
     const IpoptData*           ip_data,
     IpoptCalculatedQuantities* ip_cq)
 {
-    for (Index i = 0; const auto var : x_vec)
+    for (Index i = 0; const auto& var : x_vec)
         var->convert_and_set(x_final[i++]);
 }
 
@@ -378,6 +378,6 @@ string str(VariableSpec spec) {
     return spec == VariableSpec::Fixed ? " F " : "   ";
 }
 
-ostream& operator<<(ostream& os, const VariablePtr& var) {
-    return os << var->to_str();
+ostream& operator<<(ostream& os, const Variable& var) {
+    return os << var.to_str();
 }

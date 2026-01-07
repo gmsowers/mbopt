@@ -19,12 +19,13 @@ using std::vector;
 using std::unordered_map;
 using std::shared_ptr;
 using std::make_shared;
+using std::unique_ptr;
+using std::make_unique;
 using std::format;
 using std::ostream;
 using std::cout;
 using std::cerr;
 
-using Ipopt::SmartPtr;
 using Ipopt::TNLP;
 using Ipopt::Index;
 using Ipopt::Number;
@@ -159,9 +160,7 @@ public:
         {return convert_to_base();}
 };
 
-using VariablePtr = shared_ptr<Variable>;
-
-ostream& operator<<(ostream& os, const VariablePtr& var);
+ostream& operator<<(ostream& os, const Variable& var);
 
 //---------------------------------------------------------
 
@@ -187,11 +186,11 @@ using ConstraintPtr = shared_ptr<Constraint>;
 struct JacobianElement
 {
     ConstraintPtr con;
-    VariablePtr   var;
+    Variable*     var;
     double value  {};
 
     JacobianElement(ConstraintPtr con_ = nullptr,
-                    VariablePtr   var_ = nullptr) :
+                    Variable* const    var_ = nullptr) :
         con {con_},
         var {var_}
     {}
@@ -206,13 +205,13 @@ using JacobianElementPtr = shared_ptr<JacobianElement>;
 struct HessianElement
 {
     ConstraintPtr con;
-    VariablePtr   var1;
-    VariablePtr   var2;
+    Variable*   var1;
+    Variable*   var2;
     double value  {};
 
     HessianElement(ConstraintPtr con_  = nullptr,
-                   VariablePtr   var1_ = nullptr,
-                   VariablePtr   var2_ = nullptr) :
+                   Variable*   var1_ = nullptr,
+                   Variable*   var2_ = nullptr) :
         con  {con_},
         var1 {var1_},
         var2 {var2_}
@@ -263,9 +262,9 @@ using StreamPtr = shared_ptr<Stream>;
 
 struct StreamVars
 {
-    VariablePtr                        total_mass {};
-    unordered_map<string, VariablePtr> mass       {};
-    unordered_map<string, VariablePtr> massfrac   {};
+    Variable*                        total_mass {};
+    unordered_map<string, Variable*> mass       {};
+    unordered_map<string, Variable*> massfrac   {};
 };
 
 //---------------------------------------------------------
@@ -278,7 +277,7 @@ public:
     vector<StreamPtr>                    inlets  {};
     vector<StreamPtr>                    outlets {};
     string                               prefix  {};
-    vector<VariablePtr>                  x       {};
+    vector<Variable*>                  x       {};
     unordered_map<StreamPtr, StreamVars> x_strm  {};
     vector<ConstraintPtr>                g       {};
     vector<JacobianElementPtr>           J       {};
@@ -378,14 +377,14 @@ public:
     string                               name;
     FlowsheetPtr                         index_fs;
     UnitSet                              unit_set;
-    vector<VariablePtr>                  x_vec;
-    unordered_map<string, VariablePtr>   x_map;
+    vector<unique_ptr<Variable>>         x_vec;
+    unordered_map<string, Variable*>   x_map;
     vector<ConstraintPtr>                g_vec;
     unordered_map<string, ConstraintPtr> g_map;
     vector<JacobianElementPtr>           J;
     std::map<std::pair<Index, Index>,
              vector<HessianElementPtr>>  H;
-    IpoptApplicationPtr                  solver;
+    unique_ptr<IpoptApplication>         solver;
     bool                                 printiterate {true};
 
     Model(string_view    name_,
@@ -395,25 +394,22 @@ public:
         unit_set {unit_set_}
     {
         index_fs = make_shared<Flowsheet>(index_fs_name, this, nullptr);
-        solver = new IpoptApplication();
-    }
-    ~Model() {
-        delete solver;
+        solver = make_unique<IpoptApplication>();
     }
 
-    VariablePtr        add_variable(string_view name_, const UnitPtr& unit);
+    Variable*        add_variable(string_view name_, const UnitPtr& unit);
     ConstraintPtr      add_constraint(string_view name_);
     JacobianElementPtr add_jacobian_element(const ConstraintPtr& con,
-                                            const VariablePtr&   var);
+                                            Variable* const  var);
     HessianElementPtr  add_hessian_element(const ConstraintPtr& con,
-                                           const VariablePtr&   var1,
-                                           const VariablePtr&   var2);
+                                           Variable* const   var1,
+                                           Variable* const   var2);
     void               initialize()       { index_fs->initialize();       };
     void               eval_constraints() { index_fs->eval_constraints(); };
     void               eval_jacobian()    { index_fs->eval_jacobian();    };
     void               eval_hessian()     { index_fs->eval_hessian();     };
     void               show_variables(ostream& os = cout);
-    VariablePtr        var(const string& name_) const {
+    Variable*        var(const string& name_) const {
         return x_map.contains(name_) ? x_map.at(name_) : nullptr;
     };
 
