@@ -179,17 +179,15 @@ struct Constraint
     Constraint& operator-=(const double& val) {value -= val; return *this;}
 };
 
-using ConstraintPtr = shared_ptr<Constraint>;
-
 //---------------------------------------------------------
 
 struct JacobianElement
 {
-    ConstraintPtr con;
+    Constraint* con;
     Variable*     var;
     double value  {};
 
-    JacobianElement(ConstraintPtr con_ = nullptr,
+    JacobianElement(Constraint* con_ = nullptr,
                     Variable* const    var_ = nullptr) :
         con {con_},
         var {var_}
@@ -198,18 +196,16 @@ struct JacobianElement
     JacobianElement& operator=(const double& val) {value = val; return *this;}
 };
 
-using JacobianElementPtr = shared_ptr<JacobianElement>;
-
 //---------------------------------------------------------
 
 struct HessianElement
 {
-    ConstraintPtr con;
+    Constraint* con;
     Variable*   var1;
     Variable*   var2;
     double value  {};
 
-    HessianElement(ConstraintPtr con_  = nullptr,
+    HessianElement(Constraint* con_  = nullptr,
                    Variable*   var1_ = nullptr,
                    Variable*   var2_ = nullptr) :
         con  {con_},
@@ -219,8 +215,6 @@ struct HessianElement
 
     HessianElement& operator=(const double& val) {value = val; return *this;}
 };
-
-using HessianElementPtr = shared_ptr<HessianElement>;
 
 class Block;
 class Flowsheet;
@@ -279,9 +273,9 @@ public:
     string                               prefix  {};
     vector<Variable*>                  x       {};
     unordered_map<StreamPtr, StreamVars> x_strm  {};
-    vector<ConstraintPtr>                g       {};
-    vector<JacobianElementPtr>           J       {};
-    vector<HessianElementPtr>            H       {};
+    vector<Constraint*>                g       {};
+    vector<JacobianElement*>           J       {};
+    vector<HessianElement*>            H       {};
 
     Block() = default;
     Block(string_view              name_,
@@ -379,11 +373,11 @@ public:
     UnitSet                              unit_set;
     vector<unique_ptr<Variable>>         x_vec;
     unordered_map<string, Variable*>   x_map;
-    vector<ConstraintPtr>                g_vec;
-    unordered_map<string, ConstraintPtr> g_map;
-    vector<JacobianElementPtr>           J;
+    vector<unique_ptr<Constraint>>                g_vec;
+    unordered_map<string, Constraint*> g_map;
+    vector<unique_ptr<JacobianElement>>           J;
     std::map<std::pair<Index, Index>,
-             vector<HessianElementPtr>>  H;
+             vector<unique_ptr<HessianElement>>>  H;
     unique_ptr<IpoptApplication>         solver;
     bool                                 printiterate {true};
 
@@ -398,10 +392,10 @@ public:
     }
 
     Variable*        add_variable(string_view name_, const UnitPtr& unit);
-    ConstraintPtr      add_constraint(string_view name_);
-    JacobianElementPtr add_jacobian_element(const ConstraintPtr& con,
+    Constraint*      add_constraint(string_view name_);
+    JacobianElement* add_jacobian_element(Constraint* const con,
                                             Variable* const  var);
-    HessianElementPtr  add_hessian_element(const ConstraintPtr& con,
+    HessianElement*  add_hessian_element(Constraint* const con,
                                            Variable* const   var1,
                                            Variable* const   var2);
     void               initialize()       { index_fs->initialize();       };

@@ -153,28 +153,26 @@ Variable* Model::add_variable(string_view name_, const UnitPtr& unit)
     return v;
 }
 
-ConstraintPtr Model::add_constraint(string_view name_)
+Constraint* Model::add_constraint(string_view name_)
 {
-    auto con = make_shared<Constraint>(name_);
-    con->ix = g_vec.size();
-    g_vec.push_back(con);
+    g_vec.push_back(make_unique<Constraint>(name_));
+    auto con = g_vec.back().get();
+    con->ix = g_vec.size() - 1;
     g_map[con->name] = con;
     return con;
 }
 
-JacobianElementPtr Model::add_jacobian_element(const ConstraintPtr& con, Variable* const var) {
-    auto j = make_shared<JacobianElement>(con, var);
-    J.push_back(j);
-    return j;
+JacobianElement* Model::add_jacobian_element(Constraint* const con, Variable* const var) {
+    J.push_back(make_unique<JacobianElement>(con, var));
+    return J.back().get();
 }
 
-HessianElementPtr Model::add_hessian_element(const ConstraintPtr& con,
+HessianElement* Model::add_hessian_element(Constraint* const con,
                                              Variable* const   var1,
                                              Variable* const   var2) {
-    auto h = make_shared<HessianElement>(con, var1, var2);
     auto row_col = std::make_pair(std::max(var1->ix, var2->ix), std::min(var1->ix, var2->ix));
-    H[row_col].push_back(h);
-    return h;
+    H[row_col].push_back(make_unique<HessianElement>(con, var1, var2));
+    return H[row_col].back().get();
 }
 
 //---------------------------------------------------------
@@ -278,7 +276,7 @@ bool Model::eval_g(
         var->convert_and_set(x_in[i++]);
     }
     eval_constraints();
-    for (Index i = 0; const auto con : g_vec) {
+    for (Index i = 0; const auto& con : g_vec) {
         g_values[i++] = con->value;
     }
     return true;
@@ -295,7 +293,7 @@ bool Model::eval_jac_g(
     Number*       values)
 {
     if (values == nullptr)
-        for (Index i = 0; const auto elem : J) {
+        for (Index i = 0; const auto& elem : J) {
             iRow[i] = elem->con->ix;
             jCol[i] = elem->var->ix;
             i++;
@@ -304,7 +302,7 @@ bool Model::eval_jac_g(
         for (Index i = 0; const auto& var : x_vec)
             var->convert_and_set(x_in[i++]);
         eval_jacobian();
-        for (Index i = 0; const auto elem : J)
+        for (Index i = 0; const auto& elem : J)
             values[i++] = elem->value;
     }
 
