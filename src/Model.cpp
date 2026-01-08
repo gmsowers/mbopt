@@ -24,7 +24,7 @@ vector<string>& operator+=(vector<string>& c1, const vector<string>& c2)
 //---------------------------------------------------------
 
 Unit* UnitSet::add_unit(const string& unit_str,
-                          shared_ptr<UnitKind>   unit_kind,
+                          UnitKind*   unit_kind,
                           double        unit_ratio,
                           double        unit_offset) {
     auto unit_ptr = make_unique<Unit>(unit_str, unit_kind, unit_ratio, unit_offset);
@@ -37,13 +37,14 @@ Unit* UnitSet::add_unit(const string& unit_str,
     return u_raw;
 }
 
-shared_ptr<UnitKind> UnitSet::add_kind(const string& unit_kind_str,
+UnitKind* UnitSet::add_kind(const string& unit_kind_str,
                               const string& base_unit_str,
                               const string& default_unit_str) {
-    auto unit_kind_ptr = make_shared<UnitKind>(unit_kind_str, base_unit_str,
+    auto unit_kind_ptr = make_unique<UnitKind>(unit_kind_str, base_unit_str,
          default_unit_str.empty() ? base_unit_str : default_unit_str);
-    kinds[unit_kind_str] = unit_kind_ptr;
-    return unit_kind_ptr;
+    auto u_raw = unit_kind_ptr.get();
+    kinds[unit_kind_str] = std::move(unit_kind_ptr);
+    return u_raw;
 }
 
 //---------------------------------------------------------

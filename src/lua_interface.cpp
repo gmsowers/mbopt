@@ -84,7 +84,7 @@ sol::optional<UnitSet> lua_unit_set(sol::table lua_unit_set) {
             cerr << "Error in UnitSet: No kind \"" << kind_str << "\" found in table.\n";
             return sol::nullopt;
         }
-        auto kind = u.kinds[kind_str];
+        auto kind = u.kinds[kind_str].get();
         for (const auto& [i, units] : v.as<sol::table>()) {
             string unit_str {};
             double unit_ratio {1.0}, unit_offset {0.0};

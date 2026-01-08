@@ -38,14 +38,14 @@ struct UnitKind;
 
 struct Unit
 {
-    string str       {};
-    shared_ptr<UnitKind> kind {};
-    double ratio     {1.0};
-    double offset    {0.0};
+    string str     {};
+    UnitKind* kind {};
+    double ratio   {1.0};
+    double offset  {0.0};
 
     Unit() = default;
     Unit(string_view str_,
-         shared_ptr<UnitKind> kind_,
+         UnitKind*   kind_,
          double      ratio_    = 1.0,
          double      offset_   = 0.0) :
         str      {str_},
@@ -60,32 +60,32 @@ struct UnitKind
     string  str              {};
     string  base_unit_str    {};
     string  default_unit_str {};
-    Unit* base_unit        {};
-    Unit* default_unit     {};
+    Unit* base_unit          {};
+    Unit* default_unit       {};
 };
 
 struct UnitSet
 {
-    unordered_map<string, shared_ptr<UnitKind>> kinds {};
+    unordered_map<string, unique_ptr<UnitKind>> kinds {};
     unordered_map<string, unique_ptr<Unit>>     units {};
 
     UnitSet() = default;
 
     Unit* add_unit(const string& unit_str,
-                     shared_ptr<UnitKind>   unit_kind,
-                     double        unit_ratio = 1.0,
-                     double        unit_offset = 0.0);
+                     UnitKind*   unit_kind,
+                     double      unit_ratio = 1.0,
+                     double      unit_offset = 0.0);
 
     Unit* add_unit(const string& unit_str,
-                     const string& unit_kind_str,
-                     double        unit_ratio = 1.0,
-                     double        unit_offset = 0.0) {
-                        return add_unit(unit_str, kinds[unit_kind_str], unit_ratio, unit_offset);
-                    }
+                   const string& unit_kind_str,
+                   double        unit_ratio = 1.0,
+                   double        unit_offset = 0.0) {
+        return add_unit(unit_str, kinds[unit_kind_str].get(), unit_ratio, unit_offset);
+    }
 
-    shared_ptr<UnitKind> add_kind(const string& unit_kind_str,
-                         const string& base_unit_str,
-                         const string& default_unit_str = "");
+    UnitKind* add_kind(const string& unit_kind_str,
+                       const string& base_unit_str,
+                       const string& default_unit_str = "");
 
     Unit* get_default_unit(const string& unit_kind_str) {
         return kinds[unit_kind_str]->default_unit;
@@ -112,12 +112,12 @@ public:
     double       value {0.0};
     Ndouble      lower {};
     Ndouble      upper {};
-    Unit*      unit  {};
+    Unit*        unit  {};
     VariableSpec spec  {VariableSpec::Free};
 
     Variable() = default;
     Variable(string_view name_,
-             Unit*     unit_) :
+             Unit*       unit_) :
         name {name_},
         unit {unit_}
     {}
@@ -178,12 +178,12 @@ struct Constraint
 
 struct JacobianElement
 {
-    Constraint* con;
-    Variable*     var;
-    double value  {};
+    Constraint*  con;
+    Variable*    var;
+    double value {};
 
-    JacobianElement(Constraint* con_ = nullptr,
-                    Variable* const    var_ = nullptr) :
+    JacobianElement(Constraint*     con_ = nullptr,
+                    Variable* const var_ = nullptr) :
         con {con_},
         var {var_}
     {}
@@ -195,10 +195,10 @@ struct JacobianElement
 
 struct HessianElement
 {
-    Constraint* con;
-    Variable*   var1;
-    Variable*   var2;
-    double value  {};
+    Constraint*  con;
+    Variable*    var1;
+    Variable*    var2;
+    double value {};
 
     HessianElement(Constraint* con_  = nullptr,
                    Variable*   var1_ = nullptr,
@@ -376,9 +376,9 @@ public:
     unique_ptr<IpoptApplication>         solver;
     bool                                 printiterate {true};
 
-    Model(string_view    name_,
-          string_view    index_fs_name,
-          UnitSet&& unit_set_) :
+    Model(string_view name_,
+          string_view index_fs_name,
+          UnitSet&&   unit_set_) :
         name     {name_},
         unit_set {std::move(unit_set_)}
     {
