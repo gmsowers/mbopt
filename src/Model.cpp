@@ -23,8 +23,8 @@ vector<string>& operator+=(vector<string>& c1, const vector<string>& c2)
 
 //---------------------------------------------------------
 
-UnitPtr UnitSet::add_unit(const string& unit_str,
-                          UnitKindPtr   unit_kind,
+shared_ptr<Unit> UnitSet::add_unit(const string& unit_str,
+                          shared_ptr<UnitKind>   unit_kind,
                           double        unit_ratio,
                           double        unit_offset) {
     auto unit_ptr = make_shared<Unit>(unit_str, unit_kind, unit_ratio, unit_offset);
@@ -36,7 +36,7 @@ UnitPtr UnitSet::add_unit(const string& unit_str,
     return unit_ptr;
 }
 
-UnitKindPtr UnitSet::add_kind(const string& unit_kind_str,
+shared_ptr<UnitKind> UnitSet::add_kind(const string& unit_kind_str,
                               const string& base_unit_str,
                               const string& default_unit_str) {
     auto unit_kind_ptr = make_shared<UnitKind>(unit_kind_str, base_unit_str,
@@ -144,7 +144,7 @@ void Block::show_variables(ostream& os) {
 
 //---------------------------------------------------------
 
-Variable* Model::add_variable(string_view name_, const UnitPtr& unit)
+Variable* Model::add_variable(string_view name_, const shared_ptr<Unit>& unit)
 {
     x_vec.push_back(make_unique<Variable>(name_, unit));
     auto v = x_vec.back().get();

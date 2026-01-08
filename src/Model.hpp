@@ -35,18 +35,17 @@ using Ipopt::SolverReturn;
 using Ipopt::IpoptApplication;
 
 struct UnitKind;
-using UnitKindPtr = shared_ptr<UnitKind>;
 
 struct Unit
 {
     string str       {};
-    UnitKindPtr kind {};
+    shared_ptr<UnitKind> kind {};
     double ratio     {1.0};
     double offset    {0.0};
 
     Unit() = default;
     Unit(string_view str_,
-         UnitKindPtr kind_,
+         shared_ptr<UnitKind> kind_,
          double      ratio_    = 1.0,
          double      offset_   = 0.0) :
         str      {str_},
@@ -56,46 +55,42 @@ struct Unit
     {}
 };
 
-using UnitPtr = shared_ptr<Unit>;
-
 struct UnitKind
 {
     string  str              {};
     string  base_unit_str    {};
     string  default_unit_str {};
-    UnitPtr base_unit        {};
-    UnitPtr default_unit     {};
+    shared_ptr<Unit> base_unit        {};
+    shared_ptr<Unit> default_unit     {};
 };
 
 struct UnitSet
 {
-    unordered_map<string, UnitKindPtr> kinds {};
-    unordered_map<string, UnitPtr>     units {};
+    unordered_map<string, shared_ptr<UnitKind>> kinds {};
+    unordered_map<string, shared_ptr<Unit>>     units {};
 
     UnitSet() = default;
 
-    UnitPtr add_unit(const string& unit_str,
-                     UnitKindPtr   unit_kind,
+    shared_ptr<Unit> add_unit(const string& unit_str,
+                     shared_ptr<UnitKind>   unit_kind,
                      double        unit_ratio = 1.0,
                      double        unit_offset = 0.0);
 
-    UnitPtr add_unit(const string& unit_str,
+    shared_ptr<Unit> add_unit(const string& unit_str,
                      const string& unit_kind_str,
                      double        unit_ratio = 1.0,
                      double        unit_offset = 0.0) {
                         return add_unit(unit_str, kinds[unit_kind_str], unit_ratio, unit_offset);
                     }
 
-    UnitKindPtr add_kind(const string& unit_kind_str,
+    shared_ptr<UnitKind> add_kind(const string& unit_kind_str,
                          const string& base_unit_str,
                          const string& default_unit_str = "");
 
-    UnitPtr get_default_unit(const string& unit_kind_str) {
+    shared_ptr<Unit> get_default_unit(const string& unit_kind_str) {
         return kinds[unit_kind_str]->default_unit;
     }
 };
-
-using UnitSetPtr = shared_ptr<UnitSet>;
 
 //---------------------------------------------------------
 
@@ -117,12 +112,12 @@ public:
     double       value {0.0};
     Ndouble      lower {};
     Ndouble      upper {};
-    UnitPtr      unit  {};
+    shared_ptr<Unit>      unit  {};
     VariableSpec spec  {VariableSpec::Free};
 
     Variable() = default;
     Variable(string_view name_,
-             UnitPtr     unit_) :
+             shared_ptr<Unit>     unit_) :
         name {name_},
         unit {unit_}
     {}
@@ -136,15 +131,15 @@ public:
         {return value * unit->ratio + unit->offset;}
     double convert_to_base(double value_) const
         {return value_ * unit->ratio + unit->offset;}
-    double convert_to_base(double value_, const UnitPtr& u) const
+    double convert_to_base(double value_, const shared_ptr<Unit>& u) const
         {return value_ * u->ratio + u->offset;}
     double convert_from_base(double base_value) const
         {return (base_value - unit->offset) / unit->ratio;}
     void   convert_and_set(double base_value)
         {value = (base_value - unit->offset) / unit->ratio;}
-    void   convert_and_set(double value_, const UnitPtr& u)
+    void   convert_and_set(double value_, const shared_ptr<Unit>& u)
         {value = convert_from_base(convert_to_base(value_, u));}
-    double convert(double value_, const UnitPtr& u) const
+    double convert(double value_, const shared_ptr<Unit>& u) const
         {return (u == unit ? value_ : convert_from_base(convert_to_base(value_, u)));}
 
     Ndouble change_unit(ModelPtr m, const string& new_unit_str);
@@ -391,7 +386,7 @@ public:
         solver = make_unique<IpoptApplication>();
     }
 
-    Variable*        add_variable(string_view name_, const UnitPtr& unit);
+    Variable*        add_variable(string_view name_, const shared_ptr<Unit>& unit);
     Constraint*      add_constraint(string_view name_);
     JacobianElement* add_jacobian_element(Constraint* const con,
                                             Variable* const  var);

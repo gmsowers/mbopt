@@ -60,7 +60,7 @@ LuaResult lua_run_script(string script_file_name) {
     return {};
 }
 
-UnitSetPtr lua_unit_set(sol::table lua_unit_set) {
+shared_ptr<UnitSet> lua_unit_set(sol::table lua_unit_set) {
     auto u = make_shared<UnitSet>();
 
     if (!lua_unit_set["kinds"].valid()) {
@@ -105,7 +105,7 @@ UnitSetPtr lua_unit_set(sol::table lua_unit_set) {
     return u;
 }
 
-std::pair<ModelPtr, FlowsheetPtr> lua_new_model(string name, string index_fs_name, UnitSetPtr lua_unit_set_ptr) {
+std::pair<ModelPtr, FlowsheetPtr> lua_new_model(string name, string index_fs_name, shared_ptr<UnitSet> lua_unit_set_ptr) {
     {
         ModelPtr M = lua["M"];
         if (M != nullptr) {

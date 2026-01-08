@@ -112,6 +112,7 @@ ShowVariables()
 SolverOption("hessian_approximation", "exact")
 SolverOption("max_iter", 30)
 SolverOption("derivative_test", "second-order");
+SolverOption("tol", 1.0e-6)
 
 status = InitializeSolver()
 if status ~= 0 then
