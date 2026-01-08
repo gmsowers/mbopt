@@ -185,7 +185,7 @@ bool lua_set(string expressions) {
             else if (is_number(rhs, rhs_value)) {
                 if (m[4].matched) {
                     auto rhs_unit_str = m[4].str();
-                    auto rhs_unit = (M->unit_set.units.contains(rhs_unit_str) ? M->unit_set.units[rhs_unit_str] : nullptr);
+                    auto rhs_unit = (M->unit_set.units.contains(rhs_unit_str) ? M->unit_set.units[rhs_unit_str].get() : nullptr);
                     if (rhs_unit == nullptr) {
                         ok = false;
                         cerr << "Error in Set: right-hand side unit \"" << rhs_unit_str << "\" not found.\n";

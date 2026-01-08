@@ -60,23 +60,23 @@ struct UnitKind
     string  str              {};
     string  base_unit_str    {};
     string  default_unit_str {};
-    shared_ptr<Unit> base_unit        {};
-    shared_ptr<Unit> default_unit     {};
+    Unit* base_unit        {};
+    Unit* default_unit     {};
 };
 
 struct UnitSet
 {
     unordered_map<string, shared_ptr<UnitKind>> kinds {};
-    unordered_map<string, shared_ptr<Unit>>     units {};
+    unordered_map<string, unique_ptr<Unit>>     units {};
 
     UnitSet() = default;
 
-    shared_ptr<Unit> add_unit(const string& unit_str,
+    Unit* add_unit(const string& unit_str,
                      shared_ptr<UnitKind>   unit_kind,
                      double        unit_ratio = 1.0,
                      double        unit_offset = 0.0);
 
-    shared_ptr<Unit> add_unit(const string& unit_str,
+    Unit* add_unit(const string& unit_str,
                      const string& unit_kind_str,
                      double        unit_ratio = 1.0,
                      double        unit_offset = 0.0) {
@@ -87,7 +87,7 @@ struct UnitSet
                          const string& base_unit_str,
                          const string& default_unit_str = "");
 
-    shared_ptr<Unit> get_default_unit(const string& unit_kind_str) {
+    Unit* get_default_unit(const string& unit_kind_str) {
         return kinds[unit_kind_str]->default_unit;
     }
 };
@@ -112,12 +112,12 @@ public:
     double       value {0.0};
     Ndouble      lower {};
     Ndouble      upper {};
-    shared_ptr<Unit>      unit  {};
+    Unit*      unit  {};
     VariableSpec spec  {VariableSpec::Free};
 
     Variable() = default;
     Variable(string_view name_,
-             shared_ptr<Unit>     unit_) :
+             Unit*     unit_) :
         name {name_},
         unit {unit_}
     {}
@@ -131,15 +131,15 @@ public:
         {return value * unit->ratio + unit->offset;}
     double convert_to_base(double value_) const
         {return value_ * unit->ratio + unit->offset;}
-    double convert_to_base(double value_, const shared_ptr<Unit>& u) const
+    double convert_to_base(double value_, Unit* u) const
         {return value_ * u->ratio + u->offset;}
     double convert_from_base(double base_value) const
         {return (base_value - unit->offset) / unit->ratio;}
     void   convert_and_set(double base_value)
         {value = (base_value - unit->offset) / unit->ratio;}
-    void   convert_and_set(double value_, const shared_ptr<Unit>& u)
+    void   convert_and_set(double value_, Unit* u)
         {value = convert_from_base(convert_to_base(value_, u));}
-    double convert(double value_, const shared_ptr<Unit>& u) const
+    double convert(double value_, Unit* u) const
         {return (u == unit ? value_ : convert_from_base(convert_to_base(value_, u)));}
 
     Ndouble change_unit(ModelPtr m, const string& new_unit_str);
@@ -380,13 +380,13 @@ public:
           string_view    index_fs_name,
           UnitSet&& unit_set_) :
         name     {name_},
-        unit_set {unit_set_}
+        unit_set {std::move(unit_set_)}
     {
         index_fs = make_shared<Flowsheet>(index_fs_name, this, nullptr);
         solver = make_unique<IpoptApplication>();
     }
 
-    Variable*        add_variable(string_view name_, const shared_ptr<Unit>& unit);
+    Variable*        add_variable(string_view name_, Unit* unit);
     Constraint*      add_constraint(string_view name_);
     JacobianElement* add_jacobian_element(Constraint* const con,
                                             Variable* const  var);

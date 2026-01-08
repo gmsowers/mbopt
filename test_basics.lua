@@ -30,7 +30,7 @@ n_test = n_test + 1
 -- test 2: Create a model.
 -- M is a pointer to the model. FS is a pointer to the index flowsheet.
 M, FS = Model("test_basics", "index", unit_set)
-print("UnitSet = ", unit_set)
+unit_set = nil
 if M == nil or FS == nil then goto FAILED end
 n_test = n_test + 1
 

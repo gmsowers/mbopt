@@ -23,17 +23,18 @@ vector<string>& operator+=(vector<string>& c1, const vector<string>& c2)
 
 //---------------------------------------------------------
 
-shared_ptr<Unit> UnitSet::add_unit(const string& unit_str,
+Unit* UnitSet::add_unit(const string& unit_str,
                           shared_ptr<UnitKind>   unit_kind,
                           double        unit_ratio,
                           double        unit_offset) {
-    auto unit_ptr = make_shared<Unit>(unit_str, unit_kind, unit_ratio, unit_offset);
-    units[unit_str] = unit_ptr;
+    auto unit_ptr = make_unique<Unit>(unit_str, unit_kind, unit_ratio, unit_offset);
+    auto u_raw = unit_ptr.get();
     if (unit_str == unit_kind->base_unit_str)
-        unit_kind->base_unit = unit_ptr;
+        unit_kind->base_unit = u_raw;
     if (unit_str == unit_kind->default_unit_str)
-        unit_kind->default_unit = unit_ptr;
-    return unit_ptr;
+        unit_kind->default_unit = u_raw;
+    units[unit_str] = std::move(unit_ptr);
+    return u_raw;
 }
 
 shared_ptr<UnitKind> UnitSet::add_kind(const string& unit_kind_str,
@@ -53,7 +54,7 @@ Ndouble Variable::change_unit(ModelPtr m, const string& new_unit_str) {
         cerr << "Error in ChangeUnit(\"" << name << "\", \"" << new_unit_str << "\"). The new unit \"" << new_unit_str << "\" is not in the unit set.\n";
         return std::nullopt;
     }
-    auto new_unit = m->unit_set.units[new_unit_str];
+    auto new_unit = m->unit_set.units[new_unit_str].get();
     if (new_unit->kind != unit->kind) {
         cerr << "Error in ChangeUnit(\"" << name << "\", \"" << new_unit_str << "\"). The new unit \"" << new_unit_str << "\" is the wrong kind.\n";
         cerr << "      \"" << name << "\" has kind \"" << unit->kind->str << "\", but \"" << new_unit_str << "\" has kind \"" << new_unit->kind->str << ".\"\n";
@@ -144,7 +145,7 @@ void Block::show_variables(ostream& os) {
 
 //---------------------------------------------------------
 
-Variable* Model::add_variable(string_view name_, const shared_ptr<Unit>& unit)
+Variable* Model::add_variable(string_view name_, Unit* unit)
 {
     x_vec.push_back(make_unique<Variable>(name_, unit));
     auto v = x_vec.back().get();
