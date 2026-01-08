@@ -60,31 +60,31 @@ LuaResult lua_run_script(string script_file_name) {
     return {};
 }
 
-shared_ptr<UnitSet> lua_unit_set(sol::table lua_unit_set) {
-    auto u = make_shared<UnitSet>();
+sol::optional<UnitSet> lua_unit_set(sol::table lua_unit_set) {
+    UnitSet u {};
 
     if (!lua_unit_set["kinds"].valid()) {
         cerr << "Error in UnitSet: No \"kinds\" key found in table.\n";
-        return nullptr;
+        return sol::nullopt;
     }
 
     for (const auto& [k, v] : lua_unit_set.get<sol::table>("kinds")) {
         auto s = v.as<vector<string>>();
-        u->add_kind(k.as<string>(), s[0], s.size() > 1 ? s[1] : "");
+        u.add_kind(k.as<string>(), s[0], s.size() > 1 ? s[1] : "");
     }
 
     if (!lua_unit_set["units"].valid()) {
         cerr << "Error in UnitSet: No \"units\" key found in table.\n";
-        return nullptr;
+        return sol::nullopt;
     }
 
     for (const auto& [k, v] : lua_unit_set.get<sol::table>("units")) {
         string kind_str = k.as<string>();
-        if (!u->kinds.contains(kind_str)) {
+        if (!u.kinds.contains(kind_str)) {
             cerr << "Error in UnitSet: No kind \"" << kind_str << "\" found in table.\n";
-            return nullptr;
+            return sol::nullopt;
         }
-        auto kind = u->kinds[kind_str];
+        auto kind = u.kinds[kind_str];
         for (const auto& [i, units] : v.as<sol::table>()) {
             string unit_str {};
             double unit_ratio {1.0}, unit_offset {0.0};
@@ -99,13 +99,13 @@ shared_ptr<UnitSet> lua_unit_set(sol::table lua_unit_set) {
                         unit_offset = unit_field.as<double>();
                 }
             }
-            u->add_unit(unit_str, kind, unit_ratio, unit_offset);
+            u.add_unit(unit_str, kind, unit_ratio, unit_offset);
         }
     }
-    return u;
+    return std::move(u);
 }
 
-std::pair<ModelPtr, FlowsheetPtr> lua_new_model(string name, string index_fs_name, shared_ptr<UnitSet> lua_unit_set_ptr) {
+std::pair<ModelPtr, FlowsheetPtr> lua_new_model(string name, string index_fs_name, UnitSet& unit_set) {
     {
         ModelPtr M = lua["M"];
         if (M != nullptr) {
@@ -113,7 +113,7 @@ std::pair<ModelPtr, FlowsheetPtr> lua_new_model(string name, string index_fs_nam
             lua["M"] = lua_nil;
         }
     }
-    ModelPtr M = new Model {name, index_fs_name, *lua_unit_set_ptr};
+    ModelPtr M = new Model {name, index_fs_name, std::move(unit_set)};
     return {M, M->index_fs};
 }
 

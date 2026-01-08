@@ -378,7 +378,7 @@ public:
 
     Model(string_view    name_,
           string_view    index_fs_name,
-          const UnitSet& unit_set_) :
+          UnitSet&& unit_set_) :
         name     {name_},
         unit_set {unit_set_}
     {
