@@ -17,8 +17,6 @@ using std::string;
 using std::string_view;
 using std::vector;
 using std::unordered_map;
-using std::shared_ptr;
-using std::make_shared;
 using std::unique_ptr;
 using std::make_unique;
 using std::format;
@@ -48,33 +46,33 @@ struct Unit
          UnitKind*   kind_,
          double      ratio_    = 1.0,
          double      offset_   = 0.0) :
-        str      {str_},
-        kind     {kind_},
-        ratio    {ratio_},
-        offset   {offset_}
+        str    {str_},
+        kind   {kind_},
+        ratio  {ratio_},
+        offset {offset_}
     {}
 };
 
 struct UnitKind
 {
-    string  str              {};
-    string  base_unit_str    {};
-    string  default_unit_str {};
-    Unit* base_unit          {};
-    Unit* default_unit       {};
+    string str              {};
+    string base_unit_str    {};
+    string default_unit_str {};
+    Unit*  base_unit        {};
+    Unit*  default_unit     {};
 };
 
 struct UnitSet
 {
     unordered_map<string, unique_ptr<UnitKind>> kinds {};
     unordered_map<string, unique_ptr<Unit>>     units {};
-
+ 
     UnitSet() = default;
 
     Unit* add_unit(const string& unit_str,
-                     UnitKind*   unit_kind,
-                     double      unit_ratio = 1.0,
-                     double      unit_offset = 0.0);
+                   UnitKind*     unit_kind,
+                   double        unit_ratio  = 1.0,
+                   double        unit_offset = 0.0);
 
     Unit* add_unit(const string& unit_str,
                    const string& unit_kind_str,
@@ -214,7 +212,7 @@ struct HessianElement
 class Block;
 class Flowsheet;
 
-vector<string> operator+(const vector<string>& c1, const vector<string>& c2);
+vector<string>  operator+(const vector<string>& c1, const vector<string>& c2);
 vector<string>& operator+=(vector<string>& c1, const vector<string>& c2);
 
 //---------------------------------------------------------
@@ -222,15 +220,15 @@ vector<string>& operator+=(vector<string>& c1, const vector<string>& c2);
 struct Stream
 {
     string         name;
-    Flowsheet*   fs;
+    Flowsheet*     fs;
     vector<string> comps {};
-    Block*       to    {};
-    Block*       from  {};
+    Block*         to    {};
+    Block*         from  {};
 
     Stream() = default;
-    Stream(string_view            name_,
-           Flowsheet*           fs_,
-           const vector<string>&  comps_) :
+    Stream(string_view           name_,
+           Flowsheet*            fs_,
+           const vector<string>& comps_) :
         name  {name_},
         fs    {fs_},
         comps {comps_}
@@ -241,8 +239,6 @@ struct Stream
         return std::ranges::find(comps, compID) != comps.end();
     }
 };
-
-using StreamPtr = shared_ptr<Stream>;
 
 //---------------------------------------------------------
 
@@ -258,22 +254,22 @@ struct StreamVars
 class Block
 {
 public:
-    string                               name    {};
+    string                             name    {};
     Flowsheet*                         fs      {};
-    vector<StreamPtr>                    inlets  {};
-    vector<StreamPtr>                    outlets {};
-    string                               prefix  {};
+    vector<Stream*>                    inlets  {};
+    vector<Stream*>                    outlets {};
+    string                             prefix  {};
     vector<Variable*>                  x       {};
-    unordered_map<StreamPtr, StreamVars> x_strm  {};
+    unordered_map<Stream*, StreamVars> x_strm  {};
     vector<Constraint*>                g       {};
     vector<JacobianElement*>           J       {};
     vector<HessianElement*>            H       {};
 
     Block() = default;
-    Block(string_view              name_,
+    Block(string_view            name_,
           Flowsheet*             fs_,
-          const vector<StreamPtr>& inlets_,
-          const vector<StreamPtr>& outlets_);
+          const vector<Stream*>& inlets_,
+          const vector<Stream*>& outlets_);
     virtual ~Block()                = default;
     virtual void initialize()       = 0;
     virtual void eval_constraints() = 0;
@@ -283,7 +279,7 @@ public:
     void show_variables(ostream& os = cout);
 
 private:
-    void make_stream_variables(const StreamPtr& strm);
+    void make_stream_variables(Stream* strm);
     void make_all_stream_variables();
     void set_inlet_stream_specs();
 };
@@ -293,18 +289,18 @@ private:
 class Flowsheet
 {
 public:
-    string                           name;
-    ModelPtr                         m;
-    string                           path;
-    string                           prefix;
-    Flowsheet*                       parent;
-    vector<unique_ptr<Flowsheet>>    children;
+    string                                    name;
+    ModelPtr                                  m;
+    string                                    path;
+    string                                    prefix;
+    Flowsheet*                                parent;
+    vector<unique_ptr<Flowsheet>>             children;
     vector<unique_ptr<Block>>                 blocks;
-    unordered_map<string, Block*>  blocks_map;
-    unordered_map<string, StreamPtr> streams;
+    unordered_map<string, Block*>             blocks_map;
+    unordered_map<string, unique_ptr<Stream>> streams;
 
-    Flowsheet(string_view   name_,
-              ModelPtr      m_,
+    Flowsheet(string_view name_,
+              ModelPtr    m_,
               Flowsheet*  parent_ = nullptr) :
         name   {name_},
         m      {m_},
@@ -321,14 +317,15 @@ public:
     }
 
     Flowsheet* add_child(string_view name_);
-    StreamPtr    add_stream(const string&          name_,
-                            const vector<string>&  comps);
+    Stream*    add_stream(const string&         name_,
+                          const vector<string>& comps);
 
     template<typename T, typename... blk_params_T>
-    T* add_block(string_view              name_,
-                            const vector<StreamPtr>& inlet_strms,
-                            const vector<StreamPtr>& outlet_strms,
-                            blk_params_T&            ...blk_params) {
+    T* add_block(string_view            name_,
+                 const vector<Stream*>& inlet_strms,
+                 const vector<Stream*>& outlet_strms,
+                 blk_params_T&          ...blk_params) {
+                    
         auto blk = make_unique<T>(name_, this, inlet_strms, outlet_strms, blk_params...);
         auto blk_p = blk.get();
         blocks_map[blk->name] = blk_p;

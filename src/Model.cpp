@@ -24,32 +24,34 @@ vector<string>& operator+=(vector<string>& c1, const vector<string>& c2)
 //---------------------------------------------------------
 
 Unit* UnitSet::add_unit(const string& unit_str,
-                          UnitKind*   unit_kind,
-                          double        unit_ratio,
-                          double        unit_offset) {
-    auto unit_ptr = make_unique<Unit>(unit_str, unit_kind, unit_ratio, unit_offset);
-    auto u_raw = unit_ptr.get();
+                        UnitKind*     unit_kind,
+                        double        unit_ratio,
+                        double        unit_offset) {
+    auto unit = make_unique<Unit>(unit_str, unit_kind, unit_ratio, unit_offset);
+    auto unit_p = unit.get();
     if (unit_str == unit_kind->base_unit_str)
-        unit_kind->base_unit = u_raw;
+        unit_kind->base_unit = unit_p;
     if (unit_str == unit_kind->default_unit_str)
-        unit_kind->default_unit = u_raw;
-    units[unit_str] = std::move(unit_ptr);
-    return u_raw;
+        unit_kind->default_unit = unit_p;
+    units[unit_str] = std::move(unit);
+    return unit_p;
 }
 
 UnitKind* UnitSet::add_kind(const string& unit_kind_str,
-                              const string& base_unit_str,
-                              const string& default_unit_str) {
-    auto unit_kind_ptr = make_unique<UnitKind>(unit_kind_str, base_unit_str,
+                            const string& base_unit_str,
+                            const string& default_unit_str) {
+    auto kind = make_unique<UnitKind>(unit_kind_str, base_unit_str,
          default_unit_str.empty() ? base_unit_str : default_unit_str);
-    auto u_raw = unit_kind_ptr.get();
-    kinds[unit_kind_str] = std::move(unit_kind_ptr);
-    return u_raw;
+    auto kind_p = kind.get();
+    kinds[unit_kind_str] = std::move(kind);
+    return kind_p;
 }
 
 //---------------------------------------------------------
 
-Ndouble Variable::change_unit(ModelPtr m, const string& new_unit_str) {
+Ndouble Variable::change_unit(ModelPtr      m,
+                              const string& new_unit_str) {
+
     if (new_unit_str == unit->str) return std::nullopt;
     if (!m->unit_set.units.contains(new_unit_str)) {
         cerr << "Error in ChangeUnit(\"" << name << "\", \"" << new_unit_str << "\"). The new unit \"" << new_unit_str << "\" is not in the unit set.\n";
@@ -70,18 +72,18 @@ Ndouble Variable::change_unit(ModelPtr m, const string& new_unit_str) {
 //---------------------------------------------------------
 
 Flowsheet* Flowsheet::add_child(string_view name_) {
-    auto parent = this;
-    auto fs = make_unique<Flowsheet>(name_, parent->m, parent);
-    auto fs_raw = fs.get();
-    parent->children.push_back(std::move(fs));
-    return fs_raw;
+    auto fs = make_unique<Flowsheet>(name_, this->m, parent);
+    auto fs_p = fs.get();
+    this->children.push_back(std::move(fs));
+    return fs_p;
 }
 
-StreamPtr Flowsheet::add_stream(const string& name_, const vector<string>& comps) {
-    auto fs = this;
-    auto strm = make_shared<Stream>(name_, fs, comps);
-    fs->streams[name_] = strm;
-    return strm;
+Stream* Flowsheet::add_stream(const string&         name_,
+                              const vector<string>& comps) {
+    auto strm = make_unique<Stream>(name_, this, comps);
+    auto strm_p = strm.get();
+    this->streams[name_] = std::move(strm);
+    return strm_p;
 }
 
 char const* var_header = R"(
@@ -91,10 +93,10 @@ char const* var_header = R"(
 
 //---------------------------------------------------------
 
-Block::Block(string_view              name_,
+Block::Block(string_view            name_,
              Flowsheet*             fs_,
-             const vector<StreamPtr>& inlets_,
-             const vector<StreamPtr>& outlets_) :
+             const vector<Stream*>& inlets_,
+             const vector<Stream*>& outlets_) :
     name    {name_},
     fs      {fs_},
     inlets  {inlets_},
@@ -111,7 +113,7 @@ void Block::set_inlet_stream_specs() {
             x_strm[sin].mass[compID]->fix();
 }
 
-void Block::make_stream_variables(const StreamPtr& strm)
+void Block::make_stream_variables(Stream* strm)
 {
     auto m = strm->fs->m;
     const string s_prefix = strm->fs->prefix + name + "." + strm->name + ".";
@@ -150,19 +152,19 @@ void Block::show_variables(ostream& os) {
 Variable* Model::add_variable(string_view name_, Unit* unit)
 {
     x_vec.push_back(make_unique<Variable>(name_, unit));
-    auto v = x_vec.back().get();
-    v->ix = x_vec.size() - 1;
-    x_map[v->name] = v;
-    return v;
+    auto v_p = x_vec.back().get();
+    v_p->ix = x_vec.size() - 1;
+    x_map[v_p->name] = v_p;
+    return v_p;
 }
 
 Constraint* Model::add_constraint(string_view name_)
 {
     g_vec.push_back(make_unique<Constraint>(name_));
-    auto con = g_vec.back().get();
-    con->ix = g_vec.size() - 1;
-    g_map[con->name] = con;
-    return con;
+    auto con_p = g_vec.back().get();
+    con_p->ix = g_vec.size() - 1;
+    g_map[con_p->name] = con_p;
+    return con_p;
 }
 
 JacobianElement* Model::add_jacobian_element(Constraint* const con, Variable* const var) {
@@ -171,8 +173,8 @@ JacobianElement* Model::add_jacobian_element(Constraint* const con, Variable* co
 }
 
 HessianElement* Model::add_hessian_element(Constraint* const con,
-                                             Variable* const   var1,
-                                             Variable* const   var2) {
+                                             Variable* const var1,
+                                             Variable* const var2) {
     auto row_col = std::make_pair(std::max(var1->ix, var2->ix), std::min(var1->ix, var2->ix));
     H[row_col].push_back(make_unique<HessianElement>(con, var1, var2));
     return H[row_col].back().get();

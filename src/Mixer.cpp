@@ -2,10 +2,10 @@
 #include <iostream>
 #include "Mixer.hpp"
 
-Mixer::Mixer(string_view                   name_,
+Mixer::Mixer(string_view                 name_,
              Flowsheet*                  fs_,
-             const std::vector<StreamPtr>& inlets_,
-             const std::vector<StreamPtr>& outlets_): Block(name_, fs_, inlets_, outlets_)
+             const std::vector<Stream*>& inlets_,
+             const std::vector<Stream*>& outlets_): Block(name_, fs_, inlets_, outlets_)
 {
     const auto& sout = outlets[0];
     auto m = fs->m;

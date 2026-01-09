@@ -102,7 +102,7 @@ sol::optional<UnitSet> lua_unit_set(sol::table lua_unit_set) {
             u.add_unit(unit_str, kind, unit_ratio, unit_offset);
         }
     }
-    return std::move(u);
+    return u;
 }
 
 std::pair<ModelPtr, Flowsheet*> lua_new_model(string name, string index_fs_name, UnitSet& unit_set) {
@@ -132,22 +132,22 @@ Flowsheet* lua_get_index_fs() {
 
 auto lua_add_streams(sol::variadic_args lua_stream_specs) {
     Flowsheet* fs = lua["FS"];
-    vector<StreamPtr> streams {};
+    vector<Stream*> streams {};
     for (const auto& arg : lua_stream_specs) {
         sol::table stream_spec = arg.as<sol::table>();
         string name = stream_spec[1];
         vector<string> comps = stream_spec[2].get<vector<string>>();
         streams.push_back(fs->add_stream(name, comps));
     }
-    return sol::as_returns(std::move(streams));
+    return sol::as_returns(streams);
 }
 
-Block* lua_add_Mixer(string name, vector<StreamPtr> inlets, StreamPtr outlet) {
+Block* lua_add_Mixer(string name, vector<Stream*> inlets, Stream* outlet) {
     Flowsheet* fs = lua["FS"];
     if (fs == nullptr) return nullptr;
-    auto outlets = vector<StreamPtr> {outlet};
-    auto blk_ptr = fs->add_block<Mixer>(name, inlets, outlets);
-    return blk_ptr;
+    auto outlets = vector<Stream*> {outlet};
+    auto blk_p = fs->add_block<Mixer>(name, inlets, outlets);
+    return blk_p;
 }
 
 const std::regex re_binop(R"((\S+)(=|<|>)([^\s_]+)(?:_(\S+))?)");
