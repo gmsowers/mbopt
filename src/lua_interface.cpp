@@ -142,7 +142,7 @@ auto lua_add_streams(sol::variadic_args lua_stream_specs) {
     return sol::as_returns(std::move(streams));
 }
 
-BlockPtr lua_add_Mixer(string name, vector<StreamPtr> inlets, StreamPtr outlet) {
+Block* lua_add_Mixer(string name, vector<StreamPtr> inlets, StreamPtr outlet) {
     Flowsheet* fs = lua["FS"];
     if (fs == nullptr) return nullptr;
     auto outlets = vector<StreamPtr> {outlet};
@@ -302,7 +302,7 @@ void lua_show_model_variables(ModelPtr m) {
     m->show_variables();
 }
 
-void lua_show_block_variables(BlockPtr blk) {
+void lua_show_block_variables(Block* blk) {
     if (blk == nullptr) return;
     blk->show_variables();
 }

@@ -214,8 +214,6 @@ struct HessianElement
 class Block;
 class Flowsheet;
 
-using BlockPtr = shared_ptr<Block>;
-
 vector<string> operator+(const vector<string>& c1, const vector<string>& c2);
 vector<string>& operator+=(vector<string>& c1, const vector<string>& c2);
 
@@ -226,8 +224,8 @@ struct Stream
     string         name;
     Flowsheet*   fs;
     vector<string> comps {};
-    BlockPtr       to    {};
-    BlockPtr       from  {};
+    Block*       to    {};
+    Block*       from  {};
 
     Stream() = default;
     Stream(string_view            name_,
@@ -301,8 +299,8 @@ public:
     string                           prefix;
     Flowsheet*                       parent;
     vector<unique_ptr<Flowsheet>>    children;
-    vector<BlockPtr>                 blocks;
-    unordered_map<string, BlockPtr>  blocks_map;
+    vector<unique_ptr<Block>>                 blocks;
+    unordered_map<string, Block*>  blocks_map;
     unordered_map<string, StreamPtr> streams;
 
     Flowsheet(string_view   name_,
@@ -327,16 +325,17 @@ public:
                             const vector<string>&  comps);
 
     template<typename T, typename... blk_params_T>
-    shared_ptr<T> add_block(string_view              name_,
+    T* add_block(string_view              name_,
                             const vector<StreamPtr>& inlet_strms,
                             const vector<StreamPtr>& outlet_strms,
                             blk_params_T&            ...blk_params) {
-        auto blk = make_shared<T>(name_, this, inlet_strms, outlet_strms, blk_params...);
-        blocks.push_back(blk);
-        blocks_map[blk->name] = blk;
-        for (const auto& sin : blk->inlets)   sin->to    = blk;
-        for (const auto& sout : blk->outlets) sout->from = blk;
-        return blk;
+        auto blk = make_unique<T>(name_, this, inlet_strms, outlet_strms, blk_params...);
+        auto blk_p = blk.get();
+        blocks_map[blk->name] = blk_p;
+        for (const auto& sin : blk->inlets)   sin->to    = blk_p;
+        for (const auto& sout : blk->outlets) sout->from = blk_p;
+        blocks.push_back(std::move(blk));
+        return blk_p;
     }
 
 private:

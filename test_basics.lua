@@ -25,6 +25,7 @@ unit_set = UnitSet({
     }
 })
 if unit_set == nil then goto FAILED end
+print("Test 1 passed")
 n_test = n_test + 1
 
 -- test 2: Create a model.
@@ -32,6 +33,7 @@ n_test = n_test + 1
 M, FS = Model("test_basics", "index", unit_set)
 unit_set = nil
 if M == nil or FS == nil then goto FAILED end
+print("Test 2 passed")
 n_test = n_test + 1
 
 N1_comps = { "H2", "O2" }
@@ -45,11 +47,13 @@ N1, N2, OUT = Streams(
     { "OUT", OUT_comps }
 )
 if N1 == nil or N2 == nil or OUT == nil then goto FAILED end
+print("Test 3 passed")
 n_test = n_test + 1
 
 -- test 4: Create a Mixer block.
 mix1 = Mixer("mix1", { N1, N2 }, OUT)
 if mix1 == nil then goto FAILED end
+print("Test 4 passed")
 n_test = n_test + 1
 
 -- test 5: Set some variable values.
