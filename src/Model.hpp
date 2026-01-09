@@ -93,7 +93,6 @@ struct UnitSet
 //---------------------------------------------------------
 
 class Model;
-using ModelPtr = Model*;
 
 enum class VariableSpec { Fixed, Free };
 using Ndouble = std::optional<double>;
@@ -140,7 +139,7 @@ public:
     double convert(double value_, Unit* u) const
         {return (u == unit ? value_ : convert_from_base(convert_to_base(value_, u)));}
 
-    Ndouble change_unit(ModelPtr m, const string& new_unit_str);
+    Ndouble change_unit(Model* m, const string& new_unit_str);
 
     string to_str() const
         {return format("{:32}|{}|{}|{}|{}|{:8}|", name, str(spec), str(value),
@@ -290,7 +289,7 @@ class Flowsheet
 {
 public:
     string                                    name;
-    ModelPtr                                  m;
+    Model*                                    m;
     string                                    path;
     string                                    prefix;
     Flowsheet*                                parent;
@@ -300,7 +299,7 @@ public:
     unordered_map<string, unique_ptr<Stream>> streams;
 
     Flowsheet(string_view name_,
-              ModelPtr    m_,
+              Model*      m_,
               Flowsheet*  parent_ = nullptr) :
         name   {name_},
         m      {m_},
@@ -367,7 +366,7 @@ public:
     vector<unique_ptr<JacobianElement>>           J;
     std::map<std::pair<Index, Index>,
              vector<unique_ptr<HessianElement>>>  H;
-    unique_ptr<IpoptApplication>         solver;
+    IpoptApplication*         solver;
     bool                                 printiterate {true};
 
     Model(string_view name_,
@@ -377,7 +376,7 @@ public:
         unit_set {std::move(unit_set_)}
     {
         index_fs = make_unique<Flowsheet>(index_fs_name, this, nullptr);
-        solver = make_unique<IpoptApplication>();
+        solver = IpoptApplicationFactory();
     }
 
     Variable*        add_variable(string_view name_, Unit* unit);

@@ -9,4 +9,4 @@ struct LuaResult {
 };
 
 void lua_init();
-LuaResult lua_run_script(std::string script_file_name);
+LuaResult lua_run_script(const std::string& script_file_name);

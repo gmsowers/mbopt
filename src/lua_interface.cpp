@@ -9,6 +9,7 @@
 using sol::lua_nil;
 
 static sol::state lua;
+static Model* current_model;
 
 string remove_ws(string_view s) {
     string res {};
@@ -51,7 +52,7 @@ bool is_number(string_view s, double& value) {
     return e == std::errc() && p == ce;
 }
 
-LuaResult lua_run_script(string script_file_name) {
+LuaResult lua_run_script(const string& script_file_name) {
     auto res = lua.script_file(script_file_name, sol::script_pass_on_error);
     if (!res.valid()) {
         sol::error err = res;
@@ -60,7 +61,7 @@ LuaResult lua_run_script(string script_file_name) {
     return {};
 }
 
-sol::optional<UnitSet> lua_unit_set(sol::table lua_unit_set) {
+sol::optional<UnitSet> lua_unit_set(const sol::table& lua_unit_set) {
     UnitSet u {};
 
     if (!lua_unit_set["kinds"].valid()) {
@@ -105,28 +106,24 @@ sol::optional<UnitSet> lua_unit_set(sol::table lua_unit_set) {
     return u;
 }
 
-std::pair<ModelPtr, Flowsheet*> lua_new_model(string name, string index_fs_name, UnitSet& unit_set) {
-    {
-        ModelPtr M = lua["M"];
-        if (M != nullptr) {
-            delete M;
-            lua["M"] = lua_nil;
-        }
+std::pair<Model*, Flowsheet*> lua_new_model(string name, string index_fs_name, UnitSet& unit_set) {
+    if (current_model != nullptr) {
+        delete current_model;
+        lua["M"] = lua_nil;
     }
-    ModelPtr M = new Model {name, index_fs_name, std::move(unit_set)};
-    return {M, M->index_fs.get()};
+    current_model = new Model {name, index_fs_name, std::move(unit_set)};
+    return {current_model, current_model->index_fs.get()};
 }
 
 void lua_delete_model() {
-    ModelPtr M = lua["M"];
-    if (M != nullptr) {
-        delete M;
+    if (current_model != nullptr) {
+        delete current_model;
         lua["M"] = lua_nil;
     }
 }
 
 Flowsheet* lua_get_index_fs() {
-    ModelPtr M = lua["M1"];
+    Model* M = lua["M"];
     return M != nullptr ? M->index_fs.get() : nullptr;
 }
 
@@ -154,7 +151,7 @@ const std::regex re_binop(R"((\S+)(=|<|>)([^\s_]+)(?:_(\S+))?)");
 
 bool lua_set(string expressions) {
     std::istringstream expr_stream {expressions};
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return false;
 
     bool ok = true;
@@ -219,7 +216,7 @@ const std::regex re_spec(R"(\s*(fix|free)\s+(\S+)\s*)");
 
 bool lua_specs(string expressions) {
     std::istringstream expr_stream {expressions};
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return false;
 
     bool ok = true;
@@ -250,54 +247,54 @@ bool lua_specs(string expressions) {
 }
 
 void lua_initialize_model() {
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return;
     M->initialize();
 }
 
 void lua_eval_constraints() {
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return;
     M->eval_constraints();
 }
 
 void lua_set_string_solver_option(string option, string val) {
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return;
     M->solver->Options()->SetStringValue(option, val);
 }
 
 void lua_set_integer_solver_option(string option, int val) {
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return;
     M->solver->Options()->SetIntegerValue(option, val);
 }
 
 void lua_set_numeric_solver_option(string option, double val) {
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return;
     M->solver->Options()->SetNumericValue(option, val);
 }
 
 int lua_initialize_solver() {
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return -1;
     return M->solver->Initialize();
 }
 
 int lua_solve() {
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return -1;
     return M->solver->OptimizeTNLP(M);
 }
 
 void lua_show_variables() {
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return;
     M->show_variables();
 }
 
-void lua_show_model_variables(ModelPtr m) {
+void lua_show_model_variables(Model* m) {
     if (m == nullptr) return;
     m->show_variables();
 }
@@ -308,7 +305,7 @@ void lua_show_block_variables(Block* blk) {
 }
 
 std::pair<Ndouble, sol::optional<string>> lua_get_value(string var_name) {
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return {sol::nullopt, sol::nullopt};
     if (M->x_map.contains(var_name))
         return {M->x_map[var_name]->value,
@@ -317,7 +314,7 @@ std::pair<Ndouble, sol::optional<string>> lua_get_value(string var_name) {
 }
 
 std::pair<Ndouble, sol::optional<string>> lua_get_lower(string var_name) {
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return {sol::nullopt, sol::nullopt};
     if (M->x_map.contains(var_name)) {
         Ndouble val {};
@@ -329,7 +326,7 @@ std::pair<Ndouble, sol::optional<string>> lua_get_lower(string var_name) {
 }
 
 std::pair<Ndouble, sol::optional<string>> lua_get_upper(string var_name) {
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return {sol::nullopt, sol::nullopt};
     if (M->x_map.contains(var_name)) {
         Ndouble val {};
@@ -342,7 +339,7 @@ std::pair<Ndouble, sol::optional<string>> lua_get_upper(string var_name) {
 
 sol::optional<string> lua_get_spec(string var_name) {
     using namespace std::literals;
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return sol::nullopt;
     if (M->x_map.contains(var_name))
         return (M->x_map[var_name]->spec == VariableSpec::Fixed ? "fixed"s : "free"s);
@@ -350,7 +347,7 @@ sol::optional<string> lua_get_spec(string var_name) {
 }
 
 Ndouble lua_change_unit(string var_name, string new_unit_str) {
-    ModelPtr M = lua["M"];
+    Model* M = lua["M"];
     if (M == nullptr) return sol::nullopt;
     if (M->x_map.contains(var_name))
         return M->x_map[var_name]->change_unit(M, new_unit_str);

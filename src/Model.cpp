@@ -49,7 +49,7 @@ UnitKind* UnitSet::add_kind(const string& unit_kind_str,
 
 //---------------------------------------------------------
 
-Ndouble Variable::change_unit(ModelPtr      m,
+Ndouble Variable::change_unit(Model*        m,
                               const string& new_unit_str) {
 
     if (new_unit_str == unit->str) return std::nullopt;
