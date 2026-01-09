@@ -215,7 +215,6 @@ class Block;
 class Flowsheet;
 
 using BlockPtr = shared_ptr<Block>;
-using FlowsheetPtr = shared_ptr<Flowsheet>;
 
 vector<string> operator+(const vector<string>& c1, const vector<string>& c2);
 vector<string>& operator+=(vector<string>& c1, const vector<string>& c2);
@@ -225,14 +224,14 @@ vector<string>& operator+=(vector<string>& c1, const vector<string>& c2);
 struct Stream
 {
     string         name;
-    FlowsheetPtr   fs;
+    Flowsheet*   fs;
     vector<string> comps {};
     BlockPtr       to    {};
     BlockPtr       from  {};
 
     Stream() = default;
     Stream(string_view            name_,
-           FlowsheetPtr           fs_,
+           Flowsheet*           fs_,
            const vector<string>&  comps_) :
         name  {name_},
         fs    {fs_},
@@ -262,7 +261,7 @@ class Block
 {
 public:
     string                               name    {};
-    FlowsheetPtr                         fs      {};
+    Flowsheet*                         fs      {};
     vector<StreamPtr>                    inlets  {};
     vector<StreamPtr>                    outlets {};
     string                               prefix  {};
@@ -274,7 +273,7 @@ public:
 
     Block() = default;
     Block(string_view              name_,
-          FlowsheetPtr             fs_,
+          Flowsheet*             fs_,
           const vector<StreamPtr>& inlets_,
           const vector<StreamPtr>& outlets_);
     virtual ~Block()                = default;
@@ -293,22 +292,22 @@ private:
 
 //---------------------------------------------------------
 
-class Flowsheet : public std::enable_shared_from_this<Flowsheet>
+class Flowsheet
 {
 public:
     string                           name;
     ModelPtr                         m;
     string                           path;
     string                           prefix;
-    FlowsheetPtr                     parent;
-    vector<FlowsheetPtr>             children;
+    Flowsheet*                       parent;
+    vector<unique_ptr<Flowsheet>>    children;
     vector<BlockPtr>                 blocks;
     unordered_map<string, BlockPtr>  blocks_map;
     unordered_map<string, StreamPtr> streams;
 
     Flowsheet(string_view   name_,
               ModelPtr      m_,
-              FlowsheetPtr  parent_ = nullptr) :
+              Flowsheet*  parent_ = nullptr) :
         name   {name_},
         m      {m_},
         parent {parent_}
@@ -323,7 +322,7 @@ public:
         }
     }
 
-    FlowsheetPtr add_child(string_view name_);
+    Flowsheet* add_child(string_view name_);
     StreamPtr    add_stream(const string&          name_,
                             const vector<string>&  comps);
 
@@ -332,10 +331,9 @@ public:
                             const vector<StreamPtr>& inlet_strms,
                             const vector<StreamPtr>& outlet_strms,
                             blk_params_T&            ...blk_params) {
-        auto fs = shared_from_this();
-        auto blk = make_shared<T>(name_, fs, inlet_strms, outlet_strms, blk_params...);
-        fs->blocks.push_back(blk);
-        fs->blocks_map[blk->name] = blk;
+        auto blk = make_shared<T>(name_, this, inlet_strms, outlet_strms, blk_params...);
+        blocks.push_back(blk);
+        blocks_map[blk->name] = blk;
         for (const auto& sin : blk->inlets)   sin->to    = blk;
         for (const auto& sout : blk->outlets) sout->from = blk;
         return blk;
@@ -364,7 +362,7 @@ class Model : public TNLP
 {
 public:
     string                               name;
-    FlowsheetPtr                         index_fs;
+    unique_ptr<Flowsheet>                index_fs;
     UnitSet                              unit_set;
     vector<unique_ptr<Variable>>         x_vec;
     unordered_map<string, Variable*>   x_map;
@@ -382,7 +380,7 @@ public:
         name     {name_},
         unit_set {std::move(unit_set_)}
     {
-        index_fs = make_shared<Flowsheet>(index_fs_name, this, nullptr);
+        index_fs = make_unique<Flowsheet>(index_fs_name, this, nullptr);
         solver = make_unique<IpoptApplication>();
     }
 

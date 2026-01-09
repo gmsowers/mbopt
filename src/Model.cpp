@@ -69,15 +69,16 @@ Ndouble Variable::change_unit(ModelPtr m, const string& new_unit_str) {
 
 //---------------------------------------------------------
 
-FlowsheetPtr Flowsheet::add_child(string_view name_) {
-    auto parent = shared_from_this();
-    auto fs = make_shared<Flowsheet>(name_, parent->m, parent);
-    parent->children.push_back(fs);
-    return fs;
+Flowsheet* Flowsheet::add_child(string_view name_) {
+    auto parent = this;
+    auto fs = make_unique<Flowsheet>(name_, parent->m, parent);
+    auto fs_raw = fs.get();
+    parent->children.push_back(std::move(fs));
+    return fs_raw;
 }
 
 StreamPtr Flowsheet::add_stream(const string& name_, const vector<string>& comps) {
-    auto fs = shared_from_this();
+    auto fs = this;
     auto strm = make_shared<Stream>(name_, fs, comps);
     fs->streams[name_] = strm;
     return strm;
@@ -91,7 +92,7 @@ char const* var_header = R"(
 //---------------------------------------------------------
 
 Block::Block(string_view              name_,
-             FlowsheetPtr             fs_,
+             Flowsheet*             fs_,
              const vector<StreamPtr>& inlets_,
              const vector<StreamPtr>& outlets_) :
     name    {name_},

@@ -6,7 +6,7 @@ class Mixer final : public Block
 public:
     Mixer() = default;
     Mixer(string_view              name_,
-          FlowsheetPtr             fs_,
+          Flowsheet*             fs_,
           const vector<StreamPtr>& inlets_ ,
           const vector<StreamPtr>& outlets_);
 

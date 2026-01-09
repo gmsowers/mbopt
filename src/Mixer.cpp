@@ -3,7 +3,7 @@
 #include "Mixer.hpp"
 
 Mixer::Mixer(string_view                   name_,
-             FlowsheetPtr                  fs_,
+             Flowsheet*                  fs_,
              const std::vector<StreamPtr>& inlets_,
              const std::vector<StreamPtr>& outlets_): Block(name_, fs_, inlets_, outlets_)
 {

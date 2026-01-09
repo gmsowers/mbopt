@@ -105,7 +105,7 @@ sol::optional<UnitSet> lua_unit_set(sol::table lua_unit_set) {
     return std::move(u);
 }
 
-std::pair<ModelPtr, FlowsheetPtr> lua_new_model(string name, string index_fs_name, UnitSet& unit_set) {
+std::pair<ModelPtr, Flowsheet*> lua_new_model(string name, string index_fs_name, UnitSet& unit_set) {
     {
         ModelPtr M = lua["M"];
         if (M != nullptr) {
@@ -114,7 +114,7 @@ std::pair<ModelPtr, FlowsheetPtr> lua_new_model(string name, string index_fs_nam
         }
     }
     ModelPtr M = new Model {name, index_fs_name, std::move(unit_set)};
-    return {M, M->index_fs};
+    return {M, M->index_fs.get()};
 }
 
 void lua_delete_model() {
@@ -125,13 +125,13 @@ void lua_delete_model() {
     }
 }
 
-FlowsheetPtr lua_get_index_fs() {
+Flowsheet* lua_get_index_fs() {
     ModelPtr M = lua["M1"];
-    return M != nullptr ? M->index_fs : nullptr;
+    return M != nullptr ? M->index_fs.get() : nullptr;
 }
 
 auto lua_add_streams(sol::variadic_args lua_stream_specs) {
-    FlowsheetPtr fs = lua["FS"];
+    Flowsheet* fs = lua["FS"];
     vector<StreamPtr> streams {};
     for (const auto& arg : lua_stream_specs) {
         sol::table stream_spec = arg.as<sol::table>();
@@ -143,7 +143,7 @@ auto lua_add_streams(sol::variadic_args lua_stream_specs) {
 }
 
 BlockPtr lua_add_Mixer(string name, vector<StreamPtr> inlets, StreamPtr outlet) {
-    FlowsheetPtr fs = lua["FS"];
+    Flowsheet* fs = lua["FS"];
     if (fs == nullptr) return nullptr;
     auto outlets = vector<StreamPtr> {outlet};
     auto blk_ptr = fs->add_block<Mixer>(name, inlets, outlets);
