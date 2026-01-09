@@ -120,6 +120,7 @@ InitializeModel()
 Set("mix1.N1.mass_O2 = 2.0")
 print("Before solve:\n")
 ShowVariables()
+
 SolverOption("hessian_approximation", "exact")
 SolverOption("max_iter", 30)
 SolverOption("derivative_test", "second-order");

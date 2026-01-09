@@ -2,6 +2,8 @@
 #include <cassert>
 #include "Model.hpp"
 
+IpoptApplication* solver = IpoptApplicationFactory();
+
 vector<string> operator+(const vector<string>& c1, const vector<string>& c2)
 {
     vector<string> u {c1};

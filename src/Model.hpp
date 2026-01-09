@@ -32,6 +32,8 @@ using Ipopt::IpoptCalculatedQuantities;
 using Ipopt::SolverReturn;
 using Ipopt::IpoptApplication;
 
+extern IpoptApplication* solver;
+
 struct UnitKind;
 
 struct Unit
@@ -348,10 +350,7 @@ public:
     void eval_hessian()     { eval([](const auto& ptr) { ptr->eval_hessian(); }); }
 };
 
-
 //---------------------------------------------------------
-
-using IpoptApplicationPtr = IpoptApplication*;
 
 class Model : public TNLP
 {
@@ -366,7 +365,6 @@ public:
     vector<unique_ptr<JacobianElement>>           J;
     std::map<std::pair<Index, Index>,
              vector<unique_ptr<HessianElement>>>  H;
-    IpoptApplication*         solver;
     bool                                 printiterate {true};
 
     Model(string_view name_,
@@ -376,7 +374,6 @@ public:
         unit_set {std::move(unit_set_)}
     {
         index_fs = make_unique<Flowsheet>(index_fs_name, this, nullptr);
-        solver = IpoptApplicationFactory();
     }
 
     Variable*        add_variable(string_view name_, Unit* unit);

@@ -261,31 +261,31 @@ void lua_eval_constraints() {
 void lua_set_string_solver_option(string option, string val) {
     Model* M = lua["M"];
     if (M == nullptr) return;
-    M->solver->Options()->SetStringValue(option, val);
+    solver->Options()->SetStringValue(option, val);
 }
 
 void lua_set_integer_solver_option(string option, int val) {
     Model* M = lua["M"];
     if (M == nullptr) return;
-    M->solver->Options()->SetIntegerValue(option, val);
+    solver->Options()->SetIntegerValue(option, val);
 }
 
 void lua_set_numeric_solver_option(string option, double val) {
     Model* M = lua["M"];
     if (M == nullptr) return;
-    M->solver->Options()->SetNumericValue(option, val);
+    solver->Options()->SetNumericValue(option, val);
 }
 
 int lua_initialize_solver() {
     Model* M = lua["M"];
     if (M == nullptr) return -1;
-    return M->solver->Initialize();
+    return solver->Initialize();
 }
 
 int lua_solve() {
     Model* M = lua["M"];
     if (M == nullptr) return -1;
-    return M->solver->OptimizeTNLP(M);
+    return solver->OptimizeTNLP(M);
 }
 
 void lua_show_variables() {
