@@ -2,7 +2,7 @@
 #include <sstream>
 #include <regex>
 #include <charconv>
-#include "lua_interface.hpp"
+#include "scripter.hpp"
 #include "Model.hpp"
 #include "Mixer.hpp"
 
@@ -52,7 +52,7 @@ bool is_number(string_view s, double& value) {
     return e == std::errc() && p == ce;
 }
 
-LuaResult lua_run_script(const string& script_file_name) {
+LuaResult run_lua_script(const string& script_file_name) {
     auto res = lua.script_file(script_file_name, sol::script_pass_on_error);
     if (!res.valid()) {
         sol::error err = res;
@@ -339,7 +339,7 @@ Ndouble lua_change_unit(const string& var_name, const string& new_unit_str) {
     return sol::nullopt;
 }
 
-void lua_init() {
+void start_lua() {
 	lua.open_libraries(sol::lib::base,
                        sol::lib::string,
                        sol::lib::os,

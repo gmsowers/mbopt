@@ -8,5 +8,5 @@ struct LuaResult {
     std::string err_str {};
 };
 
-void lua_init();
-LuaResult lua_run_script(const std::string& script_file_name);
+void start_lua();
+LuaResult run_lua_script(const std::string& script_file_name);

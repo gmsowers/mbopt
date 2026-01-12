@@ -6,7 +6,7 @@ set(CMAKE_OSX_SYSROOT /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk CACHE 
 
 add_executable(${CMAKE_PROJECT_NAME}
         src/test_mbopt.cpp
-        src/lua_interface.cpp
+        src/scripter.cpp
         src/Model.cpp
         src/Mixer.cpp)
 
