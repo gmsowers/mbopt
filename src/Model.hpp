@@ -11,7 +11,7 @@
 #include <memory>
 #include "IpIpoptApplication.hpp"
 
-#define NO_BOUND 1.0e20
+constexpr double NO_BOUND = 1.0e20;
 
 using std::string;
 using std::string_view;
@@ -78,17 +78,22 @@ struct UnitSet
 
     Unit* add_unit(const string& unit_str,
                    const string& unit_kind_str,
-                   double        unit_ratio = 1.0,
+                   double        unit_ratio  = 1.0,
                    double        unit_offset = 0.0) {
-        return add_unit(unit_str, kinds[unit_kind_str].get(), unit_ratio, unit_offset);
+        return (kinds.contains(unit_kind_str) ? 
+                add_unit(unit_str, kinds[unit_kind_str].get(), unit_ratio, unit_offset) :
+                nullptr);
     }
 
     UnitKind* add_kind(const string& unit_kind_str,
                        const string& base_unit_str,
-                       const string& default_unit_str = "");
+                       const string& default_unit_str = "") {
+        return (kinds[unit_kind_str] = make_unique<UnitKind>(unit_kind_str, base_unit_str,
+            default_unit_str.empty() ? base_unit_str : default_unit_str)).get();
+    }
 
     Unit* get_default_unit(const string& unit_kind_str) {
-        return kinds[unit_kind_str]->default_unit;
+        return (kinds.contains(unit_kind_str) ? kinds[unit_kind_str]->default_unit : nullptr);
     }
 };
 
@@ -121,9 +126,9 @@ public:
         unit {unit_}
     {}
 
-    void   fix()
+    void fix()
         {spec = VariableSpec::Fixed;}
-    void   free()
+    void free()
         {spec = VariableSpec::Free;}
 
     double convert_to_base() const
@@ -175,39 +180,39 @@ struct Constraint
 
 //---------------------------------------------------------
 
-struct JacobianElement
+struct JacobianNZ
 {
     Constraint*  con;
     Variable*    var;
     double value {};
 
-    JacobianElement(Constraint*     con_ = nullptr,
-                    Variable* const var_ = nullptr) :
+    JacobianNZ(Constraint*     con_ = nullptr,
+               Variable* const var_ = nullptr) :
         con {con_},
         var {var_}
     {}
 
-    JacobianElement& operator=(const double& val) {value = val; return *this;}
+    JacobianNZ& operator=(const double& val) {value = val; return *this;}
 };
 
 //---------------------------------------------------------
 
-struct HessianElement
+struct HessianNZ
 {
     Constraint*  con;
     Variable*    var1;
     Variable*    var2;
     double value {};
 
-    HessianElement(Constraint* con_  = nullptr,
-                   Variable*   var1_ = nullptr,
-                   Variable*   var2_ = nullptr) :
+    HessianNZ(Constraint* con_  = nullptr,
+              Variable*   var1_ = nullptr,
+              Variable*   var2_ = nullptr) :
         con  {con_},
         var1 {var1_},
         var2 {var2_}
     {}
 
-    HessianElement& operator=(const double& val) {value = val; return *this;}
+    HessianNZ& operator=(const double& val) {value = val; return *this;}
 };
 
 class Block;
@@ -263,8 +268,8 @@ public:
     vector<Variable*>                  x       {};
     unordered_map<Stream*, StreamVars> x_strm  {};
     vector<Constraint*>                g       {};
-    vector<JacobianElement*>           J       {};
-    vector<HessianElement*>            H       {};
+    vector<JacobianNZ*>                J       {};
+    vector<HessianNZ*>                 H       {};
 
     Block() = default;
     Block(string_view            name_,
@@ -355,18 +360,20 @@ public:
 class Model : public TNLP
 {
 public:
-    string                               name;
-    unique_ptr<Flowsheet>                index_fs;
-    UnitSet                              unit_set;
-    vector<unique_ptr<Variable>>         x_vec;
-    unordered_map<string, Variable*>   x_map;
-    vector<unique_ptr<Constraint>>                g_vec;
-    unordered_map<string, Constraint*> g_map;
-    vector<unique_ptr<JacobianElement>>           J;
+    string                                  name;
+    unique_ptr<Flowsheet>                   index_fs;
+    UnitSet                                 unit_set;
+    vector<unique_ptr<Variable>>            x_vec;
+    unordered_map<string, Variable*>        x_map;
+    vector<unique_ptr<Constraint>>          g_vec;
+    unordered_map<string, Constraint*>      g_map;
+    vector<unique_ptr<JacobianNZ>>          J;
     std::map<std::pair<Index, Index>,
-             vector<unique_ptr<HessianElement>>>  H;
-    bool                                 printiterate {true};
+             vector<unique_ptr<HessianNZ>>> H;
+    bool                                    printiterate {true};
 
+    Model() = default;
+    
     Model(string_view name_,
           string_view index_fs_name,
           UnitSet&&   unit_set_) :
@@ -376,19 +383,19 @@ public:
         index_fs = make_unique<Flowsheet>(index_fs_name, this, nullptr);
     }
 
-    Variable*        add_variable(string_view name_, Unit* unit);
-    Constraint*      add_constraint(string_view name_);
-    JacobianElement* add_jacobian_element(Constraint* const con,
-                                            Variable* const  var);
-    HessianElement*  add_hessian_element(Constraint* const con,
-                                           Variable* const   var1,
-                                           Variable* const   var2);
-    void               initialize()       { index_fs->initialize();       };
-    void               eval_constraints() { index_fs->eval_constraints(); };
-    void               eval_jacobian()    { index_fs->eval_jacobian();    };
-    void               eval_hessian()     { index_fs->eval_hessian();     };
-    void               show_variables(ostream& os = cout);
-    Variable*        var(const string& name_) const {
+    Variable*   add_var(string_view name_, Unit* unit);
+    Constraint* add_constraint(string_view name_);
+    JacobianNZ* add_J_NZ(Constraint* con,
+                         Variable*   var);
+    HessianNZ*  add_H_NZ(Constraint* con,
+                         Variable*   var1,
+                         Variable*   var2);
+    void        initialize()       const { index_fs->initialize();       };
+    void        eval_constraints() const { index_fs->eval_constraints(); };
+    void        eval_jacobian()    const { index_fs->eval_jacobian();    };
+    void        eval_hessian()     const { index_fs->eval_hessian();     };
+    void        show_variables(ostream& os = cout) const;
+    Variable*   var(const string& name_) const {
         return x_map.contains(name_) ? x_map.at(name_) : nullptr;
     };
 

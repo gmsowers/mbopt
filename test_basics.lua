@@ -142,10 +142,8 @@ print("After solve:\n")
 ShowVariables()
 
 print(string.format("\nAll %d tests passed\n", n_test - 1))
-DeleteModel()
 do return end
 
 ::FAILED::
 print(string.format("\nTest %d failed\n", n_test))
---DeleteModel()
 do return end

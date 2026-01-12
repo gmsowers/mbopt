@@ -21,8 +21,8 @@ Mixer::Mixer(string_view                 name_,
         g.push_back(eq);
         for (const auto& sin : inlets)
             if (x_strm[sin].mass.contains(compID))
-                J.push_back(m->add_jacobian_element(eq, x_strm[sin].mass.at(compID)));
-        J.push_back(m->add_jacobian_element(eq, x_strm[sout].mass.at(compID)));
+                J.push_back(m->add_J_NZ(eq, x_strm[sin].mass.at(compID)));
+        J.push_back(m->add_J_NZ(eq, x_strm[sout].mass.at(compID)));
     }
 
     // Total mass flow definitions, \sum_{Cj in comps}(mix1.Si.mass_Cj) - mix1.Si.mass == 0 for Si in streams.
@@ -31,18 +31,18 @@ Mixer::Mixer(string_view                 name_,
         auto eq = m->add_constraint(prefix + sin->name + "_total_mass_def");
         g.push_back(eq);
         for (const auto& compID : sin->comps) {
-            J.push_back(m->add_jacobian_element(eq, x_strm[sin].mass.at(compID)));
+            J.push_back(m->add_J_NZ(eq, x_strm[sin].mass.at(compID)));
         }
-        J.push_back(m->add_jacobian_element(eq, x_strm[sin].total_mass));
+        J.push_back(m->add_J_NZ(eq, x_strm[sin].total_mass));
     }
     //  Outlet stream:
     {
         auto eq = m->add_constraint(prefix + sout->name + "_total_mass_def");
         g.push_back(eq);
         for (const auto& compID : sout->comps) {
-            J.push_back(m->add_jacobian_element(eq, x_strm[sout].mass.at(compID)));
+            J.push_back(m->add_J_NZ(eq, x_strm[sout].mass.at(compID)));
         }
-        J.push_back(m->add_jacobian_element(eq, x_strm[sout].total_mass));
+        J.push_back(m->add_J_NZ(eq, x_strm[sout].total_mass));
     }
 
     // Mass fraction definitions, (mix1.Si.mass * mix1.Si.massfrac_Cj) - mix1.Si.mass_Cj == 0
@@ -51,18 +51,18 @@ Mixer::Mixer(string_view                 name_,
         for (const auto& compID : sin->comps) {
             auto eq = m->add_constraint(prefix + sin->name + "." + compID + "_massfrac_def");
             g.push_back(eq);
-            J.push_back(m->add_jacobian_element(eq, x_strm[sin].total_mass));
-            J.push_back(m->add_jacobian_element(eq, x_strm[sin].massfrac.at(compID)));
-            J.push_back(m->add_jacobian_element(eq, x_strm[sin].mass.at(compID)));
-            H.push_back(m->add_hessian_element(eq, x_strm[sin].total_mass, x_strm[sin].massfrac.at(compID)));
+            J.push_back(m->add_J_NZ(eq, x_strm[sin].total_mass));
+            J.push_back(m->add_J_NZ(eq, x_strm[sin].massfrac.at(compID)));
+            J.push_back(m->add_J_NZ(eq, x_strm[sin].mass.at(compID)));
+            H.push_back(m->add_H_NZ(eq, x_strm[sin].total_mass, x_strm[sin].massfrac.at(compID)));
         }
     for (const auto& compID : sout->comps) {
         auto eq = m->add_constraint(prefix + sout->name + "." + compID + "_massfrac_def");
         g.push_back(eq);
-        J.push_back(m->add_jacobian_element(eq, x_strm[sout].total_mass));
-        J.push_back(m->add_jacobian_element(eq, x_strm[sout].massfrac.at(compID)));
-        J.push_back(m->add_jacobian_element(eq, x_strm[sout].mass.at(compID)));
-        H.push_back(m->add_hessian_element(eq, x_strm[sout].total_mass, x_strm[sout].massfrac.at(compID)));
+        J.push_back(m->add_J_NZ(eq, x_strm[sout].total_mass));
+        J.push_back(m->add_J_NZ(eq, x_strm[sout].massfrac.at(compID)));
+        J.push_back(m->add_J_NZ(eq, x_strm[sout].mass.at(compID)));
+        H.push_back(m->add_H_NZ(eq, x_strm[sout].total_mass, x_strm[sout].massfrac.at(compID)));
     }
 
 }

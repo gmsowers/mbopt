@@ -39,16 +39,6 @@ Unit* UnitSet::add_unit(const string& unit_str,
     return unit_p;
 }
 
-UnitKind* UnitSet::add_kind(const string& unit_kind_str,
-                            const string& base_unit_str,
-                            const string& default_unit_str) {
-    auto kind = make_unique<UnitKind>(unit_kind_str, base_unit_str,
-         default_unit_str.empty() ? base_unit_str : default_unit_str);
-    auto kind_p = kind.get();
-    kinds[unit_kind_str] = std::move(kind);
-    return kind_p;
-}
-
 //---------------------------------------------------------
 
 Ndouble Variable::change_unit(Model*        m,
@@ -56,13 +46,16 @@ Ndouble Variable::change_unit(Model*        m,
 
     if (new_unit_str == unit->str) return std::nullopt;
     if (!m->unit_set.units.contains(new_unit_str)) {
-        cerr << "Error in ChangeUnit(\"" << name << "\", \"" << new_unit_str << "\"). The new unit \"" << new_unit_str << "\" is not in the unit set.\n";
+        cerr << format("Error in ChangeUnit(\"{}\", \"{}\"). The new unit \"{}\" is not in the unit set.\n",
+            name, new_unit_str, new_unit_str);
         return std::nullopt;
     }
     auto new_unit = m->unit_set.units[new_unit_str].get();
     if (new_unit->kind != unit->kind) {
-        cerr << "Error in ChangeUnit(\"" << name << "\", \"" << new_unit_str << "\"). The new unit \"" << new_unit_str << "\" is the wrong kind.\n";
-        cerr << "      \"" << name << "\" has kind \"" << unit->kind->str << "\", but \"" << new_unit_str << "\" has kind \"" << new_unit->kind->str << ".\"\n";
+        cerr << format("Error in ChangeUnit(\"{}\", \"{}\"). The new unit \"{}\" is the wrong kind.\n",
+            name, new_unit_str, new_unit_str);
+        cerr << format("      \"{}\" has kind \"{}\", but \"{}\" has kind \"{}\".\n",
+            name, unit->kind->str, new_unit_str, new_unit->kind->str);
         return std::nullopt;
     }
     auto old_unit = unit;
@@ -125,17 +118,17 @@ void Block::make_stream_variables(Stream* strm)
     auto u_massflow = m->unit_set.get_default_unit("massflow");
     auto u_massfrac = m->unit_set.get_default_unit("massfrac");
 
-    x.push_back(strm_vars.total_mass = m->add_variable(s_prefix + "mass", u_massflow));
+    x.push_back(strm_vars.total_mass = m->add_var(s_prefix + "mass", u_massflow));
 
     string c_prefix = s_prefix + "mass_";
     for (const auto& c : strm->comps)
-        x.push_back(strm_vars.mass[c] = m->add_variable(c_prefix + c, u_massflow));
+        x.push_back(strm_vars.mass[c] = m->add_var(c_prefix + c, u_massflow));
 
     c_prefix = s_prefix + "massfrac_";
     for (const auto& c : strm->comps)
-        x.push_back(strm_vars.massfrac[c] = m->add_variable(c_prefix + c, u_massfrac));
+        x.push_back(strm_vars.massfrac[c] = m->add_var(c_prefix + c, u_massfrac));
 
-    x_strm[strm] = strm_vars;
+    x_strm[strm] = std::move(strm_vars);
 }
 
 void Block::make_all_stream_variables() {
@@ -151,7 +144,7 @@ void Block::show_variables(ostream& os) {
 
 //---------------------------------------------------------
 
-Variable* Model::add_variable(string_view name_, Unit* unit)
+Variable* Model::add_var(string_view name_, Unit* unit)
 {
     x_vec.push_back(make_unique<Variable>(name_, unit));
     auto v_p = x_vec.back().get();
@@ -169,22 +162,24 @@ Constraint* Model::add_constraint(string_view name_)
     return con_p;
 }
 
-JacobianElement* Model::add_jacobian_element(Constraint* const con, Variable* const var) {
-    J.push_back(make_unique<JacobianElement>(con, var));
+JacobianNZ* Model::add_J_NZ(Constraint* con,
+                            Variable*   var) {
+    J.push_back(make_unique<JacobianNZ>(con, var));
     return J.back().get();
 }
 
-HessianElement* Model::add_hessian_element(Constraint* const con,
-                                             Variable* const var1,
-                                             Variable* const var2) {
-    auto row_col = std::make_pair(std::max(var1->ix, var2->ix), std::min(var1->ix, var2->ix));
-    H[row_col].push_back(make_unique<HessianElement>(con, var1, var2));
+HessianNZ* Model::add_H_NZ(Constraint* con,
+                           Variable*   var1,
+                           Variable*   var2) {
+    auto row_col = std::make_pair(std::max(var1->ix, var2->ix),
+                                  std::min(var1->ix, var2->ix));
+    H[row_col].push_back(make_unique<HessianNZ>(con, var1, var2));
     return H[row_col].back().get();
 }
 
 //---------------------------------------------------------
 
-void Model::show_variables(ostream& os) {
+void Model::show_variables(ostream& os) const {
     os << var_header;
     for (const auto& var : x_vec)
         os << *var << '\n';

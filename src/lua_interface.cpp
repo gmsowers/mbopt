@@ -8,8 +8,8 @@
 
 using sol::lua_nil;
 
-static sol::state lua;
-static Model* current_model;
+static sol::state        lua;
+static unique_ptr<Model> current_model;
 
 string remove_ws(string_view s) {
     string res {};
@@ -107,19 +107,9 @@ sol::optional<UnitSet> lua_unit_set(const sol::table& lua_unit_set) {
 }
 
 std::pair<Model*, Flowsheet*> lua_new_model(string name, string index_fs_name, UnitSet& unit_set) {
-    if (current_model != nullptr) {
-        delete current_model;
-        lua["M"] = lua_nil;
-    }
-    current_model = new Model {name, index_fs_name, std::move(unit_set)};
-    return {current_model, current_model->index_fs.get()};
-}
-
-void lua_delete_model() {
-    if (current_model != nullptr) {
-        delete current_model;
-        lua["M"] = lua_nil;
-    }
+    if (lua["M"] != lua_nil) lua["M"] = lua_nil;
+    current_model.reset(new Model {name, index_fs_name, std::move(unit_set)});
+    return {current_model.get(), current_model->index_fs.get()};
 }
 
 Flowsheet* lua_get_index_fs() {
@@ -149,7 +139,7 @@ Block* lua_add_Mixer(string name, vector<Stream*> inlets, Stream* outlet) {
 
 const std::regex re_binop(R"((\S+)(=|<|>)([^\s_]+)(?:_(\S+))?)");
 
-bool lua_set(string expressions) {
+bool lua_set(const string& expressions) {
     std::istringstream expr_stream {expressions};
     Model* M = lua["M"];
     if (M == nullptr) return false;
@@ -214,7 +204,7 @@ bool lua_set(string expressions) {
 
 const std::regex re_spec(R"(\s*(fix|free)\s+(\S+)\s*)");
 
-bool lua_specs(string expressions) {
+bool lua_specs(const string& expressions) {
     std::istringstream expr_stream {expressions};
     Model* M = lua["M"];
     if (M == nullptr) return false;
@@ -258,28 +248,23 @@ void lua_eval_constraints() {
     M->eval_constraints();
 }
 
-void lua_set_string_solver_option(string option, string val) {
-    Model* M = lua["M"];
-    if (M == nullptr) return;
-    solver->Options()->SetStringValue(option, val);
+void lua_set_string_solver_option(const string& option, const string& val) {
+    if (solver) solver->Options()->SetStringValue(option, val);
 }
 
-void lua_set_integer_solver_option(string option, int val) {
-    Model* M = lua["M"];
-    if (M == nullptr) return;
-    solver->Options()->SetIntegerValue(option, val);
+void lua_set_integer_solver_option(const string& option, int val) {
+    if (solver) solver->Options()->SetIntegerValue(option, val);
 }
 
-void lua_set_numeric_solver_option(string option, double val) {
-    Model* M = lua["M"];
-    if (M == nullptr) return;
-    solver->Options()->SetNumericValue(option, val);
+void lua_set_numeric_solver_option(const string& option, double val) {
+    if (solver) solver->Options()->SetNumericValue(option, val);
 }
 
 int lua_initialize_solver() {
-    Model* M = lua["M"];
-    if (M == nullptr) return -1;
-    return solver->Initialize();
+    if (solver)
+        return solver->Initialize();
+    else
+        return -1;
 }
 
 int lua_solve() {
@@ -304,7 +289,7 @@ void lua_show_block_variables(Block* blk) {
     blk->show_variables();
 }
 
-std::pair<Ndouble, sol::optional<string>> lua_get_value(string var_name) {
+std::pair<Ndouble, sol::optional<string>> lua_get_value(const string& var_name) {
     Model* M = lua["M"];
     if (M == nullptr) return {sol::nullopt, sol::nullopt};
     if (M->x_map.contains(var_name))
@@ -313,7 +298,7 @@ std::pair<Ndouble, sol::optional<string>> lua_get_value(string var_name) {
     return {sol::nullopt, sol::nullopt};
 }
 
-std::pair<Ndouble, sol::optional<string>> lua_get_lower(string var_name) {
+std::pair<Ndouble, sol::optional<string>> lua_get_lower(const string& var_name) {
     Model* M = lua["M"];
     if (M == nullptr) return {sol::nullopt, sol::nullopt};
     if (M->x_map.contains(var_name)) {
@@ -325,7 +310,7 @@ std::pair<Ndouble, sol::optional<string>> lua_get_lower(string var_name) {
     return {sol::nullopt, sol::nullopt};
 }
 
-std::pair<Ndouble, sol::optional<string>> lua_get_upper(string var_name) {
+std::pair<Ndouble, sol::optional<string>> lua_get_upper(const string& var_name) {
     Model* M = lua["M"];
     if (M == nullptr) return {sol::nullopt, sol::nullopt};
     if (M->x_map.contains(var_name)) {
@@ -337,7 +322,7 @@ std::pair<Ndouble, sol::optional<string>> lua_get_upper(string var_name) {
     return {sol::nullopt, sol::nullopt};
 }
 
-sol::optional<string> lua_get_spec(string var_name) {
+sol::optional<string> lua_get_spec(const string& var_name) {
     using namespace std::literals;
     Model* M = lua["M"];
     if (M == nullptr) return sol::nullopt;
@@ -346,7 +331,7 @@ sol::optional<string> lua_get_spec(string var_name) {
     return sol::nullopt;
 }
 
-Ndouble lua_change_unit(string var_name, string new_unit_str) {
+Ndouble lua_change_unit(const string& var_name, const string& new_unit_str) {
     Model* M = lua["M"];
     if (M == nullptr) return sol::nullopt;
     if (M->x_map.contains(var_name))
@@ -361,28 +346,27 @@ void lua_init() {
                        sol::lib::math,
                        sol::lib::table);
 
-    lua.set_function("UnitSet", lua_unit_set);
-    lua.set_function("Model", lua_new_model);
-    lua.set_function("DeleteModel", lua_delete_model);
-    lua.set_function("IndexFS", lua_get_index_fs);
-    lua.set_function("Streams", lua_add_streams);
-    lua.set_function("Mixer", lua_add_Mixer);
-    lua.set_function("Set", lua_set);
-    lua.set_function("Specs", lua_specs);
-    lua.set_function("ShowVariables", sol::overload(lua_show_variables,
-                                                    lua_show_model_variables,
-                                                    lua_show_block_variables));
-    lua.set_function("InitializeModel", lua_initialize_model);
-    lua.set_function("EvalConstraints", lua_eval_constraints);
-    lua.set_function("Val", lua_get_value);
-    lua.set_function("LB", lua_get_lower);
-    lua.set_function("UB", lua_get_upper);
-    lua.set_function("Spec", lua_get_spec);
-    lua.set_function("ChangeUnit", lua_change_unit);
-    lua.set_function("SolverOption", sol::overload(lua_set_string_solver_option,
-                                                   lua_set_integer_solver_option,
-                                                   lua_set_numeric_solver_option));
+    lua.set_function("UnitSet",          lua_unit_set);
+    lua.set_function("Model",            lua_new_model);
+    lua.set_function("IndexFS",          lua_get_index_fs);
+    lua.set_function("Streams",          lua_add_streams);
+    lua.set_function("Mixer",            lua_add_Mixer);
+    lua.set_function("Set",              lua_set);
+    lua.set_function("Specs",            lua_specs);
+    lua.set_function("ShowVariables",    sol::overload(lua_show_variables,
+                                                       lua_show_model_variables,
+                                                       lua_show_block_variables));
+    lua.set_function("InitializeModel",  lua_initialize_model);
+    lua.set_function("EvalConstraints",  lua_eval_constraints);
+    lua.set_function("Val",              lua_get_value);
+    lua.set_function("LB",               lua_get_lower);
+    lua.set_function("UB",               lua_get_upper);
+    lua.set_function("Spec",             lua_get_spec);
+    lua.set_function("ChangeUnit",       lua_change_unit);
+    lua.set_function("SolverOption",     sol::overload(lua_set_string_solver_option,
+                                                       lua_set_integer_solver_option,
+                                                       lua_set_numeric_solver_option));
     lua.set_function("InitializeSolver", lua_initialize_solver);
-    lua.set_function("Solve", lua_solve);
+    lua.set_function("Solve",            lua_solve);
 
 }
