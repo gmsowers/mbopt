@@ -1,6 +1,5 @@
 #pragma once
-#define SOL_ALL_SAFETIES_ON 1
-#include <sol/sol.hpp>
+#include <lua.hpp>
 #include <string>
 
 struct LuaResult {
@@ -8,5 +7,5 @@ struct LuaResult {
     std::string err_str {};
 };
 
-void start_lua();
-LuaResult run_lua_script(const std::string& script_file_name);
+bool start_lua();
+LuaResult run_lua_script(const char* script_file_name);

@@ -5,10 +5,10 @@ class Mixer final : public Block
 {
 public:
     Mixer() = default;
-    Mixer(string_view            name_,
-          Flowsheet*             fs_,
-          const vector<Stream*>& inlets_ ,
-          const vector<Stream*>& outlets_);
+    Mixer(string_view       name_,
+          Flowsheet*        fs_,
+          vector<Stream*>&& inlets_ ,
+          vector<Stream*>&& outlets_);
 
     void initialize()       override;
     void eval_constraints() override;

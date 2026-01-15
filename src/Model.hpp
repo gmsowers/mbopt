@@ -272,10 +272,10 @@ public:
     vector<HessianNZ*>                 H       {};
 
     Block() = default;
-    Block(string_view            name_,
-          Flowsheet*             fs_,
-          const vector<Stream*>& inlets_,
-          const vector<Stream*>& outlets_);
+    Block(string_view       name_,
+          Flowsheet*        fs_,
+          vector<Stream*>&& inlets_,
+          vector<Stream*>&& outlets_);
     virtual ~Block()                = default;
     virtual void initialize()       = 0;
     virtual void eval_constraints() = 0;
@@ -327,12 +327,12 @@ public:
                           const vector<string>& comps);
 
     template<typename T, typename... blk_params_T>
-    T* add_block(string_view            name_,
-                 const vector<Stream*>& inlet_strms,
-                 const vector<Stream*>& outlet_strms,
-                 blk_params_T&          ...blk_params) {
+    T* add_block(string_view       name_,
+                 vector<Stream*>&& inlet_strms,
+                 vector<Stream*>&& outlet_strms,
+                 blk_params_T&     ...blk_params) noexcept {
                     
-        auto blk = make_unique<T>(name_, this, inlet_strms, outlet_strms, blk_params...);
+        auto blk = make_unique<T>(name_, this, std::move(inlet_strms), std::move(outlet_strms), blk_params...);
         auto blk_p = blk.get();
         blocks_map[blk->name] = blk_p;
         for (const auto& sin : blk->inlets)   sin->to    = blk_p;

@@ -3,12 +3,17 @@
 
 int main(int argc, const char *argv[])
 {
-    start_lua();
+    if (!start_lua()) {
+        std::cerr << "Failed to start Lua\n";
+        return 1;
+    }
+
     for (int i = 1; i < argc; i++) {
-        //std::cout << "Running Lua script: " << argv[i] << std::endl;
-        auto [ok, err_str] = run_lua_script(std::string(argv[i]));
-        if (!ok)
-            std::cout << "Error running Lua script: " << err_str << '\n';
+        auto [ok, err_str] = run_lua_script(argv[i]);
+        if (!ok) {
+            std::cerr << "Error running Lua script: " << err_str << '\n';
+            return 1;
+        }
     }
     return 0;
 }

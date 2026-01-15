@@ -88,10 +88,10 @@ char const* var_header = R"(
 
 //---------------------------------------------------------
 
-Block::Block(string_view            name_,
-             Flowsheet*             fs_,
-             const vector<Stream*>& inlets_,
-             const vector<Stream*>& outlets_) :
+Block::Block(string_view       name_,
+             Flowsheet*        fs_,
+             vector<Stream*>&& inlets_,
+             vector<Stream*>&& outlets_) :
     name    {name_},
     fs      {fs_},
     inlets  {inlets_},
