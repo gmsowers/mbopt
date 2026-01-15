@@ -93,14 +93,14 @@ double get_double_elem(lua_State* L, int index, const string& err_msg) {
 
 struct TypedPtr {
     void* ptr;
-    std::type_index type;
+    std::type_index type_idx;
 };
 
 template <typename T>
 T* get_pointer(lua_State* L) {
     auto tp = (TypedPtr*)lua_touserdata(L, -1);
     T* ptr {};
-    if (tp->type == typeid(T))
+    if (tp->type_idx == typeid(T))
         ptr = static_cast<T*>(tp->ptr);
     lua_pop(L, 1);
     return ptr;
@@ -114,9 +114,18 @@ T* get_pointer_elem(lua_State* L, int index, const string& err_msg) {
 
 template <typename T>
 void push_pointer(lua_State* L, T* p) {
-    TypedPtr* tp = (TypedPtr*)lua_newuserdatauv(L, sizeof(TypedPtr), 0);
+    auto tp = (TypedPtr*)lua_newuserdatauv(L, sizeof(TypedPtr), 0);
     tp->ptr = p;
-    tp->type = typeid(T);
+    tp->type_idx = typeid(T);
+}
+
+Block* block_cast(TypedPtr* tp) {
+    auto ptr = tp->ptr;
+    auto type_idx = tp->type_idx;
+    if (type_idx == typeid(Mixer))
+        return dynamic_cast<Block*>(static_cast<Mixer*>(ptr));
+// TODO: add Splitter, Separator, etc.
+    return nullptr;
 }
 
 #if 0
@@ -150,31 +159,6 @@ int lua_solve() {
     Model* M = lua["M"];
     if (M == nullptr) return -1;
     return solver->OptimizeTNLP(M);
-}
-
-void lua_show_variables() {
-    Model* M = lua["M"];
-    if (M == nullptr) return;
-    M->show_variables();
-}
-
-void lua_show_model_variables(Model* m) {
-    if (m == nullptr) return;
-    m->show_variables();
-}
-
-void lua_show_block_variables(Block* blk) {
-    if (blk == nullptr) return;
-    blk->show_variables();
-}
-
-std::pair<Ndouble, sol::optional<string>> lua_get_value(const string& var_name) {
-    Model* M = lua["M"];
-    if (M == nullptr) return {sol::nullopt, sol::nullopt};
-    if (M->x_map.contains(var_name))
-        return {M->x_map[var_name]->value,
-                M->x_map[var_name]->unit->str};
-    return {sol::nullopt, sol::nullopt};
 }
 
 std::pair<Ndouble, sol::optional<string>> lua_get_lower(const string& var_name) {
@@ -218,6 +202,64 @@ Ndouble lua_change_unit(const string& var_name, const string& new_unit_str) {
     return sol::nullopt;
 }
 #endif
+
+int get_value(lua_State* L) {
+    if (!M) return 0;
+    if (lua_gettop(L) == 0) return 0;
+    double val {};
+    string unit {};
+    if (lua_isuserdata(L, -1)) {
+        auto tp = (TypedPtr*)lua_touserdata(L, -1);
+        if (!tp) return 0;
+        if (tp->type_idx == typeid(Variable)) {
+            auto p = static_cast<Variable*>(tp->ptr);
+            val = p->value;
+            unit = p->unit->str;
+        } // TODO: add Constraint, JacobianNZ, etc. ?
+        else
+            return 0;
+    }
+    else if (lua_isstring(L, -1)) {
+        string name = lua_tostring(L, -1);
+        if (M->x_map.contains(name)) {
+            val = M->x_map[name]->value;
+            unit = M->x_map[name]->unit->str;
+        }
+        else if (M->g_map.contains(name)) {
+            val = M->g_map[name]->value;
+        }
+        else
+            return 0;
+    }
+
+    lua_pushnumber(L, val);
+    lua_pushstring(L, unit.c_str());
+    return 2;
+}
+
+int show_variables(lua_State* L) {
+    if (!M) return 0;
+    auto n_args = lua_gettop(L);
+    if (n_args == 0) {
+        M->show_variables();
+        return 0;
+    }
+    for (int i = 1; i <= n_args; i++) {
+        if (lua_isuserdata(L, i)) {
+            auto tp = (TypedPtr*)lua_touserdata(L, -1);
+            if (!tp) continue;
+            if (tp->type_idx == typeid(Model)) {
+                auto p = static_cast<Model*>(tp->ptr);
+                if (p) p->show_variables();
+            }
+            else {
+                auto p = block_cast(tp);
+                if (p) p->show_variables();
+            }
+        }
+    }
+    return 0;
+}
 
 int initialize_model(lua_State* L) {
     if (M) M->initialize();
@@ -301,7 +343,10 @@ int eval_expr(lua_State* L) {
                 continue;
             }
             
-            rhs_var->spec = (lhs == "free" ? VariableSpec::Free : VariableSpec::Fixed);
+            if (lhs == "free")
+                rhs_var->free();
+            else 
+                rhs_var->fix();
         }
         else {
             ok = false;
@@ -478,6 +523,8 @@ bool start_lua() {
     lua_register(L, "Mixer",      add_Mixer);
     lua_register(L, "Eval",       eval_expr);
     lua_register(L, "InitModel",  initialize_model);
+    lua_register(L, "ShowVars",   show_variables);
+    lua_register(L, "Val",        get_value);
 
     return true;
 }

@@ -57,10 +57,22 @@ ok = Eval([[
     mix1.N2.mass_O2 = 1.0
     mix1.N2.mass_CO = 1.0_lb/hr
     mix1.N2.mass_CO < 1000.0
+    free mix1.N1.mass_O2    
+    fix  mix1.N1.massfrac_O2
 ]])
 if not ok then goto FAILED end
 print("Test 4 passed")
 n_test = n_test + 1
+
+-- test 5: Get a variable value by name.
+val, u = Val("mix1.N2.mass_CO")
+if val == nil or u == nil then goto FAILED end
+if not isapprox(val, 1.0/2.20462) then goto FAILED end
+if u ~= "kg/hr" then goto FAILED end
+print("Test 5 passed")
+n_test = n_test + 1
+
+--ShowVars(mix1, M)
 
 print(string.format("\nAll %d tests passed\n", n_test - 1))
 do return end
