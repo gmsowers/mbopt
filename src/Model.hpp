@@ -32,8 +32,6 @@ using Ipopt::IpoptCalculatedQuantities;
 using Ipopt::SolverReturn;
 using Ipopt::IpoptApplication;
 
-extern IpoptApplication* solver;
-
 struct UnitKind;
 
 struct Unit
@@ -232,9 +230,9 @@ struct Stream
     Block*         from  {};
 
     Stream() = default;
-    Stream(string_view           name_,
-           Flowsheet*            fs_,
-           const vector<string>& comps_) :
+    Stream(string_view      name_,
+           Flowsheet*       fs_,
+           vector<string>&& comps_) noexcept :
         name  {name_},
         fs    {fs_},
         comps {comps_}
@@ -323,8 +321,8 @@ public:
     }
 
     Flowsheet* add_child(string_view name_);
-    Stream*    add_stream(const string&         name_,
-                          const vector<string>& comps);
+    Stream*    add_stream(const string&    name_,
+                          vector<string>&& comps) noexcept;
 
     template<typename T, typename... blk_params_T>
     T* add_block(string_view       name_,
@@ -376,7 +374,7 @@ public:
     
     Model(string_view name_,
           string_view index_fs_name,
-          UnitSet&&   unit_set_) :
+          UnitSet&&   unit_set_) noexcept :
         name     {name_},
         unit_set {std::move(unit_set_)}
     {
@@ -390,10 +388,10 @@ public:
     HessianNZ*  add_H_NZ(Constraint* con,
                          Variable*   var1,
                          Variable*   var2);
-    void        initialize()       const { index_fs->initialize();       };
-    void        eval_constraints() const { index_fs->eval_constraints(); };
-    void        eval_jacobian()    const { index_fs->eval_jacobian();    };
-    void        eval_hessian()     const { index_fs->eval_hessian();     };
+    void        initialize()       { index_fs->initialize();       };
+    void        eval_constraints() { index_fs->eval_constraints(); };
+    void        eval_jacobian()    { index_fs->eval_jacobian();    };
+    void        eval_hessian()     { index_fs->eval_hessian();     };
     void        show_variables(ostream& os = cout) const;
     Variable*   var(const string& name_) const {
         return x_map.contains(name_) ? x_map.at(name_) : nullptr;

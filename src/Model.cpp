@@ -2,8 +2,6 @@
 #include <cassert>
 #include "Model.hpp"
 
-IpoptApplication* solver = IpoptApplicationFactory();
-
 vector<string> operator+(const vector<string>& c1, const vector<string>& c2)
 {
     vector<string> u {c1};
@@ -73,9 +71,9 @@ Flowsheet* Flowsheet::add_child(string_view name_) {
     return fs_p;
 }
 
-Stream* Flowsheet::add_stream(const string&         name_,
-                              const vector<string>& comps) {
-    auto strm = make_unique<Stream>(name_, this, comps);
+Stream* Flowsheet::add_stream(const string&    name_,
+                              vector<string>&& comps) noexcept {
+    auto strm = make_unique<Stream>(name_, this, std::move(comps));
     auto strm_p = strm.get();
     this->streams[name_] = std::move(strm);
     return strm_p;

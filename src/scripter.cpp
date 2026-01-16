@@ -1,4 +1,3 @@
-#include <cassert>
 #include <sstream>
 #include <regex>
 #include <charconv>
@@ -10,6 +9,8 @@
 static lua_State*        L;
 static unique_ptr<Model> M;
 static Flowsheet*        FS;
+
+static IpoptApplication* solver = IpoptApplicationFactory();
 
 void check(bool cond, string err_msg) {
     if (!cond)
@@ -119,122 +120,197 @@ void push_pointer(lua_State* L, T* p) {
     tp->type_idx = typeid(T);
 }
 
-Block* block_cast(TypedPtr* tp) {
-    auto ptr = tp->ptr;
-    auto type_idx = tp->type_idx;
-    if (type_idx == typeid(Mixer))
-        return dynamic_cast<Block*>(static_cast<Mixer*>(ptr));
-// TODO: add Splitter, Separator, etc.
-    return nullptr;
+int solve_model(lua_State* L) {
+    int retval {-1};
+    if (M) retval = solver->OptimizeTNLP(M.get());
+    lua_pushinteger(L, retval);
+    return 1;
 }
 
-#if 0
-
-void lua_eval_constraints() {
-    Model* M = lua["M"];
-    if (M == nullptr) return;
-    M->eval_constraints();
+int eval_constraints(lua_State* L) {
+    if (M) M->eval_constraints();
+    return 0;
 }
 
-void lua_set_string_solver_option(const string& option, const string& val) {
-    if (solver) solver->Options()->SetStringValue(option, val);
+int initialize_solver(lua_State* L) {
+    int retval {-1};
+    if (solver) retval = solver->Initialize();
+    lua_pushinteger(L, retval);
+    return 1;
 }
 
-void lua_set_integer_solver_option(const string& option, int val) {
-    if (solver) solver->Options()->SetIntegerValue(option, val);
-}
-
-void lua_set_numeric_solver_option(const string& option, double val) {
-    if (solver) solver->Options()->SetNumericValue(option, val);
-}
-
-int lua_initialize_solver() {
-    if (solver)
-        return solver->Initialize();
-    else
-        return -1;
-}
-
-int lua_solve() {
-    Model* M = lua["M"];
-    if (M == nullptr) return -1;
-    return solver->OptimizeTNLP(M);
-}
-
-std::pair<Ndouble, sol::optional<string>> lua_get_lower(const string& var_name) {
-    Model* M = lua["M"];
-    if (M == nullptr) return {sol::nullopt, sol::nullopt};
-    if (M->x_map.contains(var_name)) {
-        Ndouble val {};
-        if (M->x_map[var_name]->lower.has_value())
-            val = M->x_map[var_name]->lower.value();
-        return {val, M->x_map[var_name]->unit->str};
+int set_solver_option(lua_State* L) {
+    const string msg {"SolverOption: "};
+    auto n_args = lua_gettop(L);
+    check(n_args == 2, format("{}expected 2 arguments, got {}.", msg, n_args));
+    check(lua_isstring(L, 1), msg + "expected argument 1 to be a string.");
+    string option = lua_tostring(L, 1);
+    if (lua_isinteger(L, 2)) {
+        if (solver) solver->Options()->SetIntegerValue(option, lua_tointeger(L, 2));
     }
-    return {sol::nullopt, sol::nullopt};
-}
-
-std::pair<Ndouble, sol::optional<string>> lua_get_upper(const string& var_name) {
-    Model* M = lua["M"];
-    if (M == nullptr) return {sol::nullopt, sol::nullopt};
-    if (M->x_map.contains(var_name)) {
-        Ndouble val {};
-        if (M->x_map[var_name]->upper.has_value())
-            val = M->x_map[var_name]->upper.value();
-        return {val, M->x_map[var_name]->unit->str};
+    else if (lua_isnumber(L, 2)) {
+        if (solver) solver->Options()->SetNumericValue(option, lua_tonumber(L, 2));
     }
-    return {sol::nullopt, sol::nullopt};
+    else if (lua_isstring(L, 2)) {
+        if (solver) solver->Options()->SetStringValue(option, lua_tostring(L, 2));
+    }
+    return 0;
 }
 
-sol::optional<string> lua_get_spec(const string& var_name) {
-    using namespace std::literals;
-    Model* M = lua["M"];
-    if (M == nullptr) return sol::nullopt;
-    if (M->x_map.contains(var_name))
-        return (M->x_map[var_name]->spec == VariableSpec::Fixed ? "fixed"s : "free"s);
-    return sol::nullopt;
-}
+enum class NumericAttr {VALUE, LOWER, UPPER};
 
-Ndouble lua_change_unit(const string& var_name, const string& new_unit_str) {
-    Model* M = lua["M"];
-    if (M == nullptr) return sol::nullopt;
-    if (M->x_map.contains(var_name))
-        return M->x_map[var_name]->change_unit(M, new_unit_str);
-    return sol::nullopt;
-}
-#endif
-
-int get_value(lua_State* L) {
-    if (!M) return 0;
-    if (lua_gettop(L) == 0) return 0;
-    double val {};
-    string unit {};
+std::pair<Ndouble, string> get_numeric_attr(lua_State* L, NumericAttr attr = NumericAttr::VALUE) {
+    std::pair<Ndouble, string> res {std::nullopt, {}};
+    if (!M) return res;
+    if (lua_gettop(L) == 0) return res;
     if (lua_isuserdata(L, -1)) {
         auto tp = (TypedPtr*)lua_touserdata(L, -1);
-        if (!tp) return 0;
+        if (!tp) return res;
         if (tp->type_idx == typeid(Variable)) {
             auto p = static_cast<Variable*>(tp->ptr);
-            val = p->value;
-            unit = p->unit->str;
+            switch (attr) {
+                case NumericAttr::VALUE:
+                    return {p->value, p->unit->str};
+                    break;
+                case NumericAttr::LOWER:
+                    return {p->lower, p->unit->str};
+                    break;
+                case NumericAttr::UPPER:
+                    return {p->upper, p->unit->str};
+                    break;
+                default:
+                    return res;
+            }
         } // TODO: add Constraint, JacobianNZ, etc. ?
         else
-            return 0;
+            return res;
     }
     else if (lua_isstring(L, -1)) {
         string name = lua_tostring(L, -1);
         if (M->x_map.contains(name)) {
-            val = M->x_map[name]->value;
-            unit = M->x_map[name]->unit->str;
+            switch (attr) {
+                case NumericAttr::VALUE:
+                    return {M->x_map[name]->value, M->x_map[name]->unit->str};
+                    break;
+                case NumericAttr::LOWER:
+                    return {M->x_map[name]->lower, M->x_map[name]->unit->str};
+                    break;
+                case NumericAttr::UPPER:
+                    return {M->x_map[name]->upper, M->x_map[name]->unit->str};
+                    break;
+                default:
+                    return res;
+            }
         }
         else if (M->g_map.contains(name)) {
-            val = M->g_map[name]->value;
+            if (attr == NumericAttr::VALUE)
+                return {M->g_map[name]->value, {}};
+            else
+                return res;
+        }
+        else
+            return res;
+    }
+    else
+        return res;
+}
+
+int get_value(lua_State* L) {
+    auto res = get_numeric_attr(L, NumericAttr::VALUE);
+    if (std::get<0>(res).has_value()) {
+        lua_pushnumber(L, std::get<0>(res).value());
+        lua_pushstring(L, std::get<1>(res).c_str());
+        return 2;
+    }
+    else
+        return 0;
+}
+
+int get_lower(lua_State* L) {
+    auto res = get_numeric_attr(L, NumericAttr::LOWER);
+    if (std::get<0>(res).has_value()) {
+        lua_pushnumber(L, std::get<0>(res).value());
+        lua_pushstring(L, std::get<1>(res).c_str());
+        return 2;
+    }
+    else
+        return 0;
+}
+
+int get_upper(lua_State* L) {
+    auto res = get_numeric_attr(L, NumericAttr::UPPER);
+    if (std::get<0>(res).has_value()) {
+        lua_pushnumber(L, std::get<0>(res).value());
+        lua_pushstring(L, std::get<1>(res).c_str());
+        return 2;
+    }
+    else
+        return 0;
+}
+
+int get_spec(lua_State* L) {
+    if (!M) return 0;
+    if (lua_gettop(L) == 0) return 0;
+    if (lua_isstring(L, -1)) {
+        string name = lua_tostring(L, -1);
+        if (M->x_map.contains(name)) {
+            lua_pushstring(L, M->x_map[name]->spec == VariableSpec::Fixed ? "Fixed" : "Free");
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int get_var(lua_State* L) {
+    if (!M) return 0;
+    if (lua_gettop(L) == 0) return 0;
+    if (lua_isstring(L, -1)) {
+        string name = lua_tostring(L, -1);
+        if (M->x_map.contains(name)) {
+            push_pointer<Variable>(L, M->x_map[name]);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int change_unit(lua_State* L) {
+    if (!M) return 0;
+    if (lua_gettop(L) < 2) return 0;
+    if (lua_isstring(L, -2)) {
+        string name = lua_tostring(L, -2);
+        string unit_str = lua_tostring(L, -1);
+        if (M->x_map.contains(name)) {
+            Ndouble retval = M->x_map[name]->change_unit(M.get(), unit_str);
+            if (retval.has_value()) {
+                lua_pushnumber(L, retval.value());
+                return 1;
+            }
+            else
+                return 0;
         }
         else
             return 0;
     }
-
-    lua_pushnumber(L, val);
-    lua_pushstring(L, unit.c_str());
-    return 2;
+    else if (lua_isuserdata(L, -2)) {
+        auto tp = (TypedPtr*)lua_touserdata(L, -2);
+        if (!tp) return 0;
+        string unit_str = lua_tostring(L, -1);
+        if (tp->type_idx == typeid(Variable)) {
+            auto p = static_cast<Variable*>(tp->ptr);
+            Ndouble retval = p->change_unit(M.get(), unit_str);
+            if (retval.has_value()) {
+                lua_pushnumber(L, retval.value());
+                return 1;
+            }
+            else
+                return 0;
+        }
+        else
+            return 0;
+    }
+    else
+        return 0;
 }
 
 int show_variables(lua_State* L) {
@@ -252,8 +328,8 @@ int show_variables(lua_State* L) {
                 auto p = static_cast<Model*>(tp->ptr);
                 if (p) p->show_variables();
             }
-            else {
-                auto p = block_cast(tp);
+            else if (tp->type_idx == typeid(Block)) {
+                auto p = static_cast<Block*>(tp->ptr);
                 if (p) p->show_variables();
             }
         }
@@ -419,7 +495,7 @@ int add_streams(lua_State* L) {
             comps[j - 1] = get_string_elem(L, j, format("{}component {} in argument {} to be a string", msg, j, i));
 
         lua_pop(L, 2); // Pop ith arg and elem 2 of ith arg
-        strms[i - 1] = FS->add_stream(strm_name, comps);
+        strms[i - 1] = FS->add_stream(strm_name, std::move(comps));
     }
 
     // Push pointers to the created streams onto the stack.
@@ -518,47 +594,22 @@ bool start_lua() {
     if (!L) return false;
     luaL_openlibs(L);
     
-    lua_register(L, "Model",      create_model);
-    lua_register(L, "Streams",    add_streams);
-    lua_register(L, "Mixer",      add_Mixer);
-    lua_register(L, "Eval",       eval_expr);
-    lua_register(L, "InitModel",  initialize_model);
-    lua_register(L, "ShowVars",   show_variables);
-    lua_register(L, "Val",        get_value);
+    lua_register(L, "Model",           create_model);
+    lua_register(L, "Streams",         add_streams);
+    lua_register(L, "Mixer",           add_Mixer);
+    lua_register(L, "Eval",            eval_expr);
+    lua_register(L, "InitModel",       initialize_model);
+    lua_register(L, "ShowVariables",   show_variables);
+    lua_register(L, "Val",             get_value);
+    lua_register(L, "LB",              get_lower);
+    lua_register(L, "UB",              get_upper);
+    lua_register(L, "Spec",            get_spec);
+    lua_register(L, "Var",             get_var);
+    lua_register(L, "ChangeUnit",      change_unit);
+    lua_register(L, "SolverOption",    set_solver_option);
+    lua_register(L, "Solve",           solve_model);
+    lua_register(L, "InitSolver",      initialize_solver);
+    lua_register(L, "EvalConstraints", eval_constraints);
 
     return true;
 }
-
-#if 0
-void start_lua() {
-	lua.open_libraries(sol::lib::base,
-                       sol::lib::string,
-                       sol::lib::os,
-                       sol::lib::math,
-                       sol::lib::table);
-
-    lua.set_function("UnitSet",          lua_unit_set);
-    lua.set_function("Model",            lua_new_model);
-    lua.set_function("IndexFS",          lua_get_index_fs);
-    lua.set_function("Streams",          lua_add_streams);
-    lua.set_function("Mixer",            lua_add_Mixer);
-    lua.set_function("Set",              lua_set);
-    lua.set_function("Specs",            lua_specs);
-    lua.set_function("ShowVariables",    sol::overload(lua_show_variables,
-                                                       lua_show_model_variables,
-                                                       lua_show_block_variables));
-    lua.set_function("InitializeModel",  lua_initialize_model);
-    lua.set_function("EvalConstraints",  lua_eval_constraints);
-    lua.set_function("Val",              lua_get_value);
-    lua.set_function("LB",               lua_get_lower);
-    lua.set_function("UB",               lua_get_upper);
-    lua.set_function("Spec",             lua_get_spec);
-    lua.set_function("ChangeUnit",       lua_change_unit);
-    lua.set_function("SolverOption",     sol::overload(lua_set_string_solver_option,
-                                                       lua_set_integer_solver_option,
-                                                       lua_set_numeric_solver_option));
-    lua.set_function("InitializeSolver", lua_initialize_solver);
-    lua.set_function("Solve",            lua_solve);
-
-}
-#endif
