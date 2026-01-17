@@ -6,18 +6,17 @@
 #include "Model.hpp"
 #include "Mixer.hpp"
 
-static lua_State*        L;
 static unique_ptr<Model> M;
 static Flowsheet*        FS;
 
 static IpoptApplication* solver = IpoptApplicationFactory();
 
-void check(bool cond, string err_msg) {
+void check(lua_State* L, const bool cond, string_view err_msg) {
     if (!cond)
-        luaL_error(L, err_msg.c_str());
+        luaL_error(L, err_msg.data());
 }
 
-string trim_all(string_view s) {
+string trim_all(const string_view s) {
     string res {};
     for (const auto& c : s) {
         if (c == ' ' || c == '\t' || c == '\n')
@@ -27,31 +26,29 @@ string trim_all(string_view s) {
     return res;
 }
 
-string trim_sides(string_view s) {
-    auto len = s.size();
+string trim_sides(const string_view s) {
+    const auto len = s.size();
     auto beg = len;
-    for (int i = 0; i < len; i++) {
-        auto c = s[i];
-        if (c != ' ' && c != '\t' && c != '\n') {
+    for (size_t i = 0; i < len; i++) {
+        if (const auto c = s[i]; c != ' ' && c != '\t' && c != '\n') {
             beg = i;
             break;
         }
     }
     auto end = len - 1;
-    for (int i = end; i >= beg; i--) {
-        auto c = s[i];
-        if (c != ' ' && c != '\t' && c != '\n') {
+    for (auto i = end; i >= beg; i--) {
+        if (const auto c = s[i]; c != ' ' && c != '\t' && c != '\n') {
             end = i;
             break;
         }
     }
     string res {};
-    for (int i = beg; i <= end; i++)
+    for (auto i = beg; i <= end; i++)
         res += s[i];
     return res;
 }
 
-bool is_number(string_view s, double& value) {
+bool is_number(const string_view s, double& value) {
     const char *cb = s.data();
     const char *ce = cb + s.size();
     auto [p, e] = std::from_chars(cb, ce, value);
@@ -79,14 +76,14 @@ auto get_script_name(lua_State* L) {
 }
 
 string get_string_elem(lua_State* L, int index, const string& err_msg) {
-    check(lua_rawgeti(L, -1, index) == LUA_TSTRING, err_msg);
+    check(L, lua_rawgeti(L, -1, index) == LUA_TSTRING, err_msg);
     string elem = lua_tostring(L, -1);
     lua_pop(L, 1);
     return elem;
 }
 
 double get_double_elem(lua_State* L, int index, const string& err_msg) {
-    check(lua_rawgeti(L, -1, index) == LUA_TNUMBER, err_msg);
+    check(L, lua_rawgeti(L, -1, index) == LUA_TNUMBER, err_msg);
     double elem = lua_tonumber(L, -1);
     lua_pop(L, 1);
     return elem;
@@ -109,7 +106,7 @@ T* get_pointer(lua_State* L) {
 
 template <typename T>
 T* get_pointer_elem(lua_State* L, int index, const string& err_msg) {
-    check(lua_rawgeti(L, -1, index) == LUA_TUSERDATA, err_msg);
+    check(L, lua_rawgeti(L, -1, index) == LUA_TUSERDATA, err_msg);
     return get_pointer<T>(L);
 }
 
@@ -142,8 +139,8 @@ int initialize_solver(lua_State* L) {
 int set_solver_option(lua_State* L) {
     const string msg {"SolverOption: "};
     auto n_args = lua_gettop(L);
-    check(n_args == 2, format("{}expected 2 arguments, got {}.", msg, n_args));
-    check(lua_isstring(L, 1), msg + "expected argument 1 to be a string.");
+    check(L, n_args == 2, format("{}expected 2 arguments, got {}.", msg, n_args));
+    check(L, lua_isstring(L, 1), msg + "expected argument 1 to be a string.");
     string option = lua_tostring(L, 1);
     if (lua_isinteger(L, 2)) {
         if (solver) solver->Options()->SetIntegerValue(option, lua_tointeger(L, 2));
@@ -171,13 +168,10 @@ std::pair<Ndouble, string> get_numeric_attr(lua_State* L, NumericAttr attr = Num
             switch (attr) {
                 case NumericAttr::VALUE:
                     return {p->value, p->unit->str};
-                    break;
                 case NumericAttr::LOWER:
                     return {p->lower, p->unit->str};
-                    break;
                 case NumericAttr::UPPER:
                     return {p->upper, p->unit->str};
-                    break;
                 default:
                     return res;
             }
@@ -191,13 +185,10 @@ std::pair<Ndouble, string> get_numeric_attr(lua_State* L, NumericAttr attr = Num
             switch (attr) {
                 case NumericAttr::VALUE:
                     return {M->x_map[name]->value, M->x_map[name]->unit->str};
-                    break;
                 case NumericAttr::LOWER:
                     return {M->x_map[name]->lower, M->x_map[name]->unit->str};
-                    break;
                 case NumericAttr::UPPER:
                     return {M->x_map[name]->upper, M->x_map[name]->unit->str};
-                    break;
                 default:
                     return res;
             }
@@ -337,6 +328,30 @@ int show_variables(lua_State* L) {
     return 0;
 }
 
+int show_constraints(lua_State* L) {
+    if (!M) return 0;
+    auto n_args = lua_gettop(L);
+    if (n_args == 0) {
+        M->show_constraints();
+        return 0;
+    }
+    for (int i = 1; i <= n_args; i++) {
+        if (lua_isuserdata(L, i)) {
+            auto tp = (TypedPtr*)lua_touserdata(L, -1);
+            if (!tp) continue;
+            if (tp->type_idx == typeid(Model)) {
+                auto p = static_cast<Model*>(tp->ptr);
+                if (p) p->show_constraints();
+            }
+            else if (tp->type_idx == typeid(Block)) {
+                auto p = static_cast<Block*>(tp->ptr);
+                if (p) p->show_constraints();
+            }
+        }
+    }
+    return 0;
+}
+
 int initialize_model(lua_State* L) {
     if (M) M->initialize();
     return 0;
@@ -350,8 +365,8 @@ int eval_expr(lua_State* L) {
     auto line_no = get_line_no(L);
     string msg {get_script_name(L) + ", "};
     auto n_args = lua_gettop(L);
-    check(n_args == 1, format("{}expected 1 argument, got {}.", msg, n_args));
-    check(lua_isstring(L, 1), msg + "expected the argument to be a string.");
+    check(L, n_args == 1, format("{}expected 1 argument, got {}.", msg, n_args));
+    check(L, lua_isstring(L, 1), msg + "expected the argument to be a string.");
 
     std::istringstream expr_stream {lua_tostring(L, 1)};
 
@@ -438,31 +453,31 @@ int add_Mixer(lua_State* L) {
     if (!FS) return 0;
     const string msg {"Mixer: expected "};
     auto n_args = lua_gettop(L);
-    check(n_args == 3, format("{}3 arguments, got {}.", msg, n_args));
-    check(lua_isstring(L, 1) && !lua_isnumber(L, 1), msg + "argument 1 to be a string.");
-    check(lua_istable(L, 2), msg + "argument 2 to be a table of Stream pointers.");
-    check(lua_isuserdata(L, 3), msg + "argument 3 to be a Stream pointer.");
+    check(L, n_args == 3, format("{}3 arguments, got {}.", msg, n_args));
+    check(L, lua_isstring(L, 1) && !lua_isnumber(L, 1), msg + "argument 1 to be a string.");
+    check(L, lua_istable(L, 2), msg + "argument 2 to be a table of Stream pointers.");
+    check(L, lua_isuserdata(L, 3), msg + "argument 3 to be a Stream pointer.");
 
     // Block name,
     string blk_name = lua_tostring(L, 1);               
-    check(!blk_name.empty(), msg + "argument 1 to be a non-empty string");
+    check(L, !blk_name.empty(), msg + "argument 1 to be a non-empty string");
 
     // List of inlet streams.
     auto n_inlets = lua_rawlen(L, 2);
-    check(n_inlets > 1, msg + "argument 2 to be a table of at least two pointers to Streams");
+    check(L, n_inlets > 1, msg + "argument 2 to be a table of at least two pointers to Streams");
     vector<Stream*> inlets(n_inlets);
     lua_pushvalue(L, 2);    // Push argument 2 onto the stack.
-    for (int i = 1; i <= n_inlets; i++) {
+    for (lua_Unsigned i = 1; i <= n_inlets; i++) {
         inlets[i - 1] = get_pointer_elem<Stream>(L, i,
             format("{} element {} of argument 2 to be a pointer to a Stream", msg, i));
-        check(inlets[i - 1] != nullptr,
+        check(L, inlets[i - 1] != nullptr,
             format("{} element {} of argument 2 to be a pointer to a Stream", msg, i));
     }
     lua_pop(L, 1);  // Pop argument 2
 
     lua_pushvalue(L, 3);    // Push argument 3 onto the stack.
     auto outlet = get_pointer<Stream>(L);
-    check(outlet != nullptr, format("{} argument 3 to be a pointer to a Stream", msg));
+    check(L, outlet != nullptr, format("{} argument 3 to be a pointer to a Stream", msg));
 
     // Create the block.
     auto blk_p = FS->add_block<Mixer>(blk_name, std::move(inlets), vector<Stream*>{outlet});
@@ -477,19 +492,19 @@ int add_streams(lua_State* L) {
     if (!FS) return 0;
     const string msg {"Streams: expected "};
     int n_strms = lua_gettop(L);
-    check(n_strms > 0, format("{}at least one argument", msg));
+    check(L, n_strms > 0, format("{}at least one argument", msg));
 
     vector<Stream*> strms(n_strms);
     for (int i = 1; i <= n_strms; i++) {
-        check(lua_istable(L, i), format("{}argument {} to be a table", msg, i));
-        check(lua_rawlen(L, i) == 2, format("{}length of argument {} to be 2", msg, i));
+        check(L, lua_istable(L, i), format("{}argument {} to be a table", msg, i));
+        check(L, lua_rawlen(L, i) == 2, format("{}length of argument {} to be 2", msg, i));
         lua_pushvalue(L, i);    // Push ith arg onto stack, where arg = {"Name", {"Comp1", "Comp2", etc}}
         string strm_name = get_string_elem(L, 1, format("{}element 1 of argument {} to be a string", msg, i));
 
-        check(lua_rawgeti(L, i, 2) == LUA_TTABLE,
+        check(L, lua_rawgeti(L, i, 2) == LUA_TTABLE,
             format("{}element 2 of argument {} to be a table", msg, i)); // Push elem 2 of ith arg onto stack, e.g., {"Comp1", "Comp2"}
         int n_comps = lua_rawlen(L, -1);
-        check(n_comps > 0, format("{}at least one component in argument {}", msg, i));
+        check(L, n_comps > 0, format("{}at least one component in argument {}", msg, i));
         vector<string> comps(n_comps);
         for (int j = 1; j <= n_comps; j++)
             comps[j - 1] = get_string_elem(L, j, format("{}component {} in argument {} to be a string", msg, j, i));
@@ -510,27 +525,27 @@ int create_model(lua_State* L) {
     const string msg_kinds {"Model: in the \"kinds\" table, expected "};
     const string msg_units {"Model: in the \"units\" table, expected "};
     auto n_args = lua_gettop(L);
-    check(n_args == 4, format("{}4 arguments, got {}", msg_expected, n_args));
-    check(lua_isstring(L, 1) && !lua_isnumber(L, 1), msg_expected + "argument 1 to be a string");  // arg 1 is the model name
-    check(lua_isstring(L, 2) && !lua_isnumber(L, 2), msg_expected + "argument 2 to be a string");  // arg 2 is the index flowsheet name
-    check(lua_istable(L, 3),  msg_expected + "argument 3 to be a table");  // arg 3 is a kinds table
-    check(lua_istable(L, 4),  msg_expected + "argument 4 to be a table");  // arg 4 is a units table
+    check(L, n_args == 4, format("{}4 arguments, got {}", msg_expected, n_args));
+    check(L, lua_isstring(L, 1) && !lua_isnumber(L, 1), msg_expected + "argument 1 to be a string");  // arg 1 is the model name
+    check(L, lua_isstring(L, 2) && !lua_isnumber(L, 2), msg_expected + "argument 2 to be a string");  // arg 2 is the index flowsheet name
+    check(L, lua_istable(L, 3),  msg_expected + "argument 3 to be a table");  // arg 3 is a kinds table
+    check(L, lua_istable(L, 4),  msg_expected + "argument 4 to be a table");  // arg 4 is a units table
 
     UnitSet u {};
 
     string name = lua_tostring(L, 1);               
-    check(!name.empty(), msg_expected + "argument 1 to be a non-empty string");
+    check(L, !name.empty(), msg_expected + "argument 1 to be a non-empty string");
     string index_fs_name = lua_tostring(L, 2);      
-    check(!index_fs_name.empty(), msg_expected + "argument 2 to be a non-empty string");
+    check(L, !index_fs_name.empty(), msg_expected + "argument 2 to be a non-empty string");
 
     // kinds table:
     lua_pushnil(L);     // push a nil key to start
     while (lua_next(L, 3) != 0) {                   // pops the key, then pushes next key-value pair
         string kind_str = lua_tostring(L, -2);      // key is kind_str
-        check(lua_istable(L, -1), format("{}key \"{}\" to reference a table", msg_kinds, kind_str)); // value is table with 1 or 2 strings
+        check(L, lua_istable(L, -1), format("{}key \"{}\" to reference a table", msg_kinds, kind_str)); // value is table with 1 or 2 strings
 
         auto n_str = lua_rawlen(L, -1);             // number of strings in the table
-        check(n_str > 0, format("{}1 or 2 strings in the \"{}\" definition", msg_kinds, kind_str));
+        check(L, n_str > 0, format("{}1 or 2 strings in the \"{}\" definition", msg_kinds, kind_str));
 
         string base_unit_str = get_string_elem(L, 1,
             format("{}element 1 in the \"{}\" definition to be a string", msg_kinds, kind_str)); // element 1 is base_unit_str
@@ -546,13 +561,13 @@ int create_model(lua_State* L) {
     lua_pushnil(L);     // push a nil key to start
     while (lua_next(L, 4) != 0) {                   // pops the key, then pushes next key-value pair
         string kind_str = lua_tostring(L, -2);      // key is kind_str
-        check(lua_istable(L, -1), format("{}key \"{}\" to reference a table", msg_units, kind_str)); // value is a table of n_units tables
+        check(L, lua_istable(L, -1), format("{}key \"{}\" to reference a table", msg_units, kind_str)); // value is a table of n_units tables
         auto n_units = lua_rawlen(L, -1);           // value is a list of unit lists for this kind
 
-        for (int i = 1; i <= n_units; i++) {
-            check(lua_rawgeti(L, -1, i) == LUA_TTABLE, format("{}unit {} in \"{}\" definition to be a list", msg_units, i, kind_str)); // push the ith unit list on the stack
+        for (lua_Unsigned i = 1; i <= n_units; i++) {
+            check(L, lua_rawgeti(L, -1, i) == LUA_TTABLE, format("{}unit {} in \"{}\" definition to be a list", msg_units, i, kind_str)); // push the ith unit list on the stack
             auto n_elem = lua_rawlen(L, -1);                // number of elements in the ith unit list
-            check(n_elem > 1 && n_elem < 4, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}", msg_units, i, kind_str));
+            check(L, n_elem > 1 && n_elem < 4, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}", msg_units, i, kind_str));
 
             string unit_str = get_string_elem(L, 1, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}", msg_units, i, kind_str));     // element 1 is unit_str
             double unit_ratio = get_double_elem(L, 2, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}", msg_units, i, kind_str));   // element 2 is unit_ratio
@@ -567,7 +582,7 @@ int create_model(lua_State* L) {
     }
 
     // Create the model.
-    M.reset(new Model {name, index_fs_name, std::move(u)});
+    M = make_unique<Model>(name, index_fs_name, std::move(u));
     FS = M->index_fs.get();
 
     // Push pointers to the Model and the index Flowsheet onto the stack.
@@ -577,21 +592,21 @@ int create_model(lua_State* L) {
     return 2;
 }
 
-LuaResult run_lua_script(const char* script_file_name) {
+LuaResult run_lua_script(lua_State* L, const char* script_file_name) {
     int result = luaL_dofile(L, script_file_name);
     
     if (result != LUA_OK) {
         string err_str = lua_tostring(L, -1);
         lua_pop(L, 1);
         lua_close(L);
-        return {false, err_str};
+        return {.ok = false, .err_str = err_str};
     }
-    return {true, ""};
+    return {.ok = true, .err_str = ""};
 }
 
-bool start_lua() {
-    L = luaL_newstate();
-    if (!L) return false;
+lua_State* start_lua() {
+    auto L = luaL_newstate();
+    if (!L) return nullptr;
     luaL_openlibs(L);
     
     lua_register(L, "Model",           create_model);
@@ -610,6 +625,7 @@ bool start_lua() {
     lua_register(L, "Solve",           solve_model);
     lua_register(L, "InitSolver",      initialize_solver);
     lua_register(L, "EvalConstraints", eval_constraints);
+    lua_register(L, "ShowConstraints", show_constraints);
 
-    return true;
+    return L;
 }

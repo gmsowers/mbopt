@@ -174,7 +174,13 @@ struct Constraint
     Constraint& operator=(const double& val)  {value = val;  return *this;}
     Constraint& operator+=(const double& val) {value += val; return *this;}
     Constraint& operator-=(const double& val) {value -= val; return *this;}
+
+    string to_str() const
+        {return format("{:32}|{}|", name, str(value));}
+
 };
+
+ostream& operator<<(ostream& os, const Constraint& con);
 
 //---------------------------------------------------------
 
@@ -280,7 +286,8 @@ public:
     virtual void eval_jacobian()    = 0;
     virtual void eval_hessian()     = 0;
 
-    void show_variables(ostream& os = cout);
+    void show_variables(ostream& os = cout) const;
+    void show_constraints(ostream& os = cout) const;
 
 private:
     void make_stream_variables(Stream* strm);
@@ -393,6 +400,7 @@ public:
     void        eval_jacobian()    { index_fs->eval_jacobian();    };
     void        eval_hessian()     { index_fs->eval_hessian();     };
     void        show_variables(ostream& os = cout) const;
+    void        show_constraints(ostream& os = cout) const;
     Variable*   var(const string& name_) const {
         return x_map.contains(name_) ? x_map.at(name_) : nullptr;
     };

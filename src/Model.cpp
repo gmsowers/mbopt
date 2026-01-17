@@ -84,6 +84,11 @@ char const* var_header = R"(
 --------------------------------|---|--------------|--------------|--------------|--------|
 )";
 
+char const* con_header = R"(
+              Name                    Value
+--------------------------------|--------------|
+)";
+
 //---------------------------------------------------------
 
 Block::Block(string_view       name_,
@@ -134,10 +139,16 @@ void Block::make_all_stream_variables() {
     for (const auto& strm : outlets) make_stream_variables(strm);
 }
 
-void Block::show_variables(ostream& os) {
+void Block::show_variables(ostream& os) const {
     os << var_header;
     for (const auto var : x)
         os << *var << '\n';
+}
+
+void Block::show_constraints(ostream& os) const {
+    os << con_header;
+    for (const auto& con : g)
+        os << *con << '\n';
 }
 
 //---------------------------------------------------------
@@ -181,6 +192,12 @@ void Model::show_variables(ostream& os) const {
     os << var_header;
     for (const auto& var : x_vec)
         os << *var << '\n';
+}
+
+void Model::show_constraints(ostream& os) const {
+    os << con_header;
+    for (const auto& con : g_vec)
+        os << *con << '\n';
 }
 
 bool Model::get_nlp_info(
@@ -378,4 +395,8 @@ string str(VariableSpec spec) {
 
 ostream& operator<<(ostream& os, const Variable& var) {
     return os << var.to_str();
+}
+
+ostream& operator<<(ostream& os, const Constraint& con) {
+    return os << con.to_str();
 }

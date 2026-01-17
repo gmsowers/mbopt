@@ -7,5 +7,5 @@ struct LuaResult {
     std::string err_str {};
 };
 
-bool start_lua();
-LuaResult run_lua_script(const char* script_file_name);
+lua_State* start_lua();
+LuaResult run_lua_script(lua_State* L, const char* script_file_name);

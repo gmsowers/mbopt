@@ -105,7 +105,15 @@ if lb ~= nil then goto FAILED end
 print("Test 9 passed")
 n_test = n_test + 1
 
+print("Before init:\n")
+EvalConstraints()
+ShowConstraints()
+
 InitModel()
+print("After init:\n")
+EvalConstraints()
+ShowConstraints()
+
 Eval("mix1.N1.mass_O2 = 2.0")
 print("Before solve:\n")
 ShowVariables()
