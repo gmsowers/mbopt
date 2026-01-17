@@ -111,8 +111,8 @@ ShowConstraints()
 
 InitModel()
 print("After init:\n")
-EvalConstraints()
-ShowConstraints()
+EvalConstraints(mix1)
+ShowConstraints(mix1)
 
 Eval("mix1.N1.mass_O2 = 2.0")
 print("Before solve:\n")

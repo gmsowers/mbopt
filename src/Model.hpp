@@ -328,8 +328,8 @@ public:
     }
 
     Flowsheet* add_child(string_view name_);
-    Stream*    add_stream(const string&    name_,
-                          vector<string>&& comps) noexcept;
+    Stream*    add_stream(const string&  name_,
+                          vector<string> comps) noexcept;
 
     template<typename T, typename... blk_params_T>
     T* add_block(string_view       name_,

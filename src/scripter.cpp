@@ -92,6 +92,7 @@ double get_double_elem(lua_State* L, int index, const string& err_msg) {
 struct TypedPtr {
     void* ptr;
     std::type_index type_idx;
+    std::type_index subtype_idx;
 };
 
 template <typename T>
@@ -110,11 +111,13 @@ T* get_pointer_elem(lua_State* L, int index, const string& err_msg) {
     return get_pointer<T>(L);
 }
 
-template <typename T>
+template <typename T, typename subT = void>
 void push_pointer(lua_State* L, T* p) {
     auto tp = (TypedPtr*)lua_newuserdatauv(L, sizeof(TypedPtr), 0);
     tp->ptr = p;
     tp->type_idx = typeid(T);
+    tp->subtype_idx = typeid(subT);
+
 }
 
 int solve_model(lua_State* L) {
@@ -125,7 +128,28 @@ int solve_model(lua_State* L) {
 }
 
 int eval_constraints(lua_State* L) {
-    if (M) M->eval_constraints();
+    if (!M) return 0;
+    auto n_args = lua_gettop(L);
+    if (n_args == 0) {
+        M->eval_constraints();
+        return 0;
+    }
+    for (int i = 1; i <= n_args; i++) {
+        if (lua_isuserdata(L, i)) {
+            auto tp = (TypedPtr*)lua_touserdata(L, -1);
+            if (!tp) continue;
+            if (tp->type_idx == typeid(Model)) {
+                auto p = static_cast<Model*>(tp->ptr);
+                if (p) p->eval_constraints();
+            }
+            else if (tp->type_idx == typeid(Block)) {
+                if (tp->subtype_idx == typeid(Mixer)) {
+                    auto p = static_cast<Mixer*>(tp->ptr);
+                    if (p) p->eval_constraints();
+                } // TODO: add Splitter, Separator, etc.
+            }
+        }
+    }
     return 0;
 }
 
@@ -304,11 +328,12 @@ int change_unit(lua_State* L) {
         return 0;
 }
 
-int show_variables(lua_State* L) {
+template <typename Show_func>
+int show(lua_State* L, Show_func show_this) {
     if (!M) return 0;
     auto n_args = lua_gettop(L);
     if (n_args == 0) {
-        M->show_variables();
+        show_this(M.get());
         return 0;
     }
     for (int i = 1; i <= n_args; i++) {
@@ -317,11 +342,11 @@ int show_variables(lua_State* L) {
             if (!tp) continue;
             if (tp->type_idx == typeid(Model)) {
                 auto p = static_cast<Model*>(tp->ptr);
-                if (p) p->show_variables();
+                if (p) show_this(p);
             }
             else if (tp->type_idx == typeid(Block)) {
                 auto p = static_cast<Block*>(tp->ptr);
-                if (p) p->show_variables();
+                if (p) show_this(p);
             }
         }
     }
@@ -329,27 +354,11 @@ int show_variables(lua_State* L) {
 }
 
 int show_constraints(lua_State* L) {
-    if (!M) return 0;
-    auto n_args = lua_gettop(L);
-    if (n_args == 0) {
-        M->show_constraints();
-        return 0;
-    }
-    for (int i = 1; i <= n_args; i++) {
-        if (lua_isuserdata(L, i)) {
-            auto tp = (TypedPtr*)lua_touserdata(L, -1);
-            if (!tp) continue;
-            if (tp->type_idx == typeid(Model)) {
-                auto p = static_cast<Model*>(tp->ptr);
-                if (p) p->show_constraints();
-            }
-            else if (tp->type_idx == typeid(Block)) {
-                auto p = static_cast<Block*>(tp->ptr);
-                if (p) p->show_constraints();
-            }
-        }
-    }
-    return 0;
+    return show(L, [](auto* p) { p->show_constraints(); });
+}
+
+int show_variables(lua_State* L) {
+    return show(L, [](auto* p) { p->show_variables(); });
 }
 
 int initialize_model(lua_State* L) {
@@ -482,8 +491,8 @@ int add_Mixer(lua_State* L) {
     // Create the block.
     auto blk_p = FS->add_block<Mixer>(blk_name, std::move(inlets), vector<Stream*>{outlet});
 
-    // Push a pointer to the block onto the stack.
-    push_pointer<Mixer>(L, blk_p);
+    // Push a pointer to a Block with subtype Mixer onto the stack.
+    push_pointer<Block, Mixer>(L, blk_p);
 
     return 1;
 }
