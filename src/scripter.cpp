@@ -111,12 +111,12 @@ T* get_pointer_elem(lua_State* L, int index, const string& err_msg) {
     return get_pointer<T>(L);
 }
 
-template <typename T, typename subT = void>
+template <typename T, typename sub_T = void>
 void push_pointer(lua_State* L, T* p) {
     auto tp = (TypedPtr*)lua_newuserdatauv(L, sizeof(TypedPtr), 0);
     tp->ptr = p;
     tp->type_idx = typeid(T);
-    tp->subtype_idx = typeid(subT);
+    tp->subtype_idx = typeid(sub_T);
 
 }
 
@@ -178,89 +178,44 @@ int set_solver_option(lua_State* L) {
     return 0;
 }
 
-enum class NumericAttr {VALUE, LOWER, UPPER};
-
-std::pair<Ndouble, string> get_numeric_attr(lua_State* L, NumericAttr attr = NumericAttr::VALUE) {
+template <typename Get_Attr_T>
+int get_variable_attr(lua_State* L, Get_Attr_T get_attr) {
     std::pair<Ndouble, string> res {std::nullopt, {}};
-    if (!M) return res;
-    if (lua_gettop(L) == 0) return res;
+    if (!M) return 0;
+    if (lua_gettop(L) == 0) return 0;
     if (lua_isuserdata(L, -1)) {
         auto tp = (TypedPtr*)lua_touserdata(L, -1);
-        if (!tp) return res;
+        if (!tp) return 0;
         if (tp->type_idx == typeid(Variable)) {
             auto p = static_cast<Variable*>(tp->ptr);
-            switch (attr) {
-                case NumericAttr::VALUE:
-                    return {p->value, p->unit->str};
-                case NumericAttr::LOWER:
-                    return {p->lower, p->unit->str};
-                case NumericAttr::UPPER:
-                    return {p->upper, p->unit->str};
-                default:
-                    return res;
-            }
-        } // TODO: add Constraint, JacobianNZ, etc. ?
-        else
-            return res;
+            res = {get_attr(p), p->unit->str};
+        }
     }
     else if (lua_isstring(L, -1)) {
         string name = lua_tostring(L, -1);
-        if (M->x_map.contains(name)) {
-            switch (attr) {
-                case NumericAttr::VALUE:
-                    return {M->x_map[name]->value, M->x_map[name]->unit->str};
-                case NumericAttr::LOWER:
-                    return {M->x_map[name]->lower, M->x_map[name]->unit->str};
-                case NumericAttr::UPPER:
-                    return {M->x_map[name]->upper, M->x_map[name]->unit->str};
-                default:
-                    return res;
-            }
-        }
-        else if (M->g_map.contains(name)) {
-            if (attr == NumericAttr::VALUE)
-                return {M->g_map[name]->value, {}};
-            else
-                return res;
-        }
-        else
-            return res;
+        if (M->x_map.contains(name))
+            res = {get_attr(M->x_map[name]), M->x_map[name]->unit->str};
+    }
+
+    if (std::get<0>(res).has_value()) {
+        lua_pushnumber(L, std::get<0>(res).value());
+        lua_pushstring(L, std::get<1>(res).c_str());
+        return 2;
     }
     else
-        return res;
+        return 0;
 }
 
 int get_value(lua_State* L) {
-    auto res = get_numeric_attr(L, NumericAttr::VALUE);
-    if (std::get<0>(res).has_value()) {
-        lua_pushnumber(L, std::get<0>(res).value());
-        lua_pushstring(L, std::get<1>(res).c_str());
-        return 2;
-    }
-    else
-        return 0;
+    return get_variable_attr(L, [](auto* p){ return p->value; });
 }
 
 int get_lower(lua_State* L) {
-    auto res = get_numeric_attr(L, NumericAttr::LOWER);
-    if (std::get<0>(res).has_value()) {
-        lua_pushnumber(L, std::get<0>(res).value());
-        lua_pushstring(L, std::get<1>(res).c_str());
-        return 2;
-    }
-    else
-        return 0;
+    return get_variable_attr(L, [](auto* p){ return p->lower; });
 }
 
 int get_upper(lua_State* L) {
-    auto res = get_numeric_attr(L, NumericAttr::UPPER);
-    if (std::get<0>(res).has_value()) {
-        lua_pushnumber(L, std::get<0>(res).value());
-        lua_pushstring(L, std::get<1>(res).c_str());
-        return 2;
-    }
-    else
-        return 0;
+    return get_variable_attr(L, [](auto* p){ return p->upper; });
 }
 
 int get_spec(lua_State* L) {
@@ -328,12 +283,12 @@ int change_unit(lua_State* L) {
         return 0;
 }
 
-template <typename Show_func>
-int show(lua_State* L, Show_func show_this) {
+template <typename Show_Things_T>
+int show(lua_State* L, Show_Things_T show_things) {
     if (!M) return 0;
     auto n_args = lua_gettop(L);
     if (n_args == 0) {
-        show_this(M.get());
+        show_things(M.get());
         return 0;
     }
     for (int i = 1; i <= n_args; i++) {
@@ -342,11 +297,11 @@ int show(lua_State* L, Show_func show_this) {
             if (!tp) continue;
             if (tp->type_idx == typeid(Model)) {
                 auto p = static_cast<Model*>(tp->ptr);
-                if (p) show_this(p);
+                if (p) show_things(p);
             }
             else if (tp->type_idx == typeid(Block)) {
                 auto p = static_cast<Block*>(tp->ptr);
-                if (p) show_this(p);
+                if (p) show_things(p);
             }
         }
     }
