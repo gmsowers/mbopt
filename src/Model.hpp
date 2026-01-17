@@ -230,7 +230,7 @@ vector<string>& operator+=(vector<string>& c1, const vector<string>& c2);
 struct Stream
 {
     string         name;
-    Flowsheet*     fs;
+    Flowsheet*     fs    {};
     vector<string> comps {};
     Block*         to    {};
     Block*         from  {};
@@ -241,7 +241,7 @@ struct Stream
            vector<string>&& comps_) noexcept :
         name  {name_},
         fs    {fs_},
-        comps {comps_}
+        comps {std::move(comps_)}
     {}
 
     bool has_comp(string_view compID) const
@@ -279,7 +279,7 @@ public:
     Block(string_view       name_,
           Flowsheet*        fs_,
           vector<Stream*>&& inlets_,
-          vector<Stream*>&& outlets_);
+          vector<Stream*>&& outlets_) noexcept;
     virtual ~Block()                = default;
     virtual void initialize()       = 0;
     virtual void eval_constraints() = 0;

@@ -94,11 +94,11 @@ char const* con_header = R"(
 Block::Block(string_view       name_,
              Flowsheet*        fs_,
              vector<Stream*>&& inlets_,
-             vector<Stream*>&& outlets_) :
+             vector<Stream*>&& outlets_) noexcept :
     name    {name_},
     fs      {fs_},
-    inlets  {inlets_},
-    outlets {outlets_}
+    inlets  {std::move(inlets_)},
+    outlets {std::move(outlets_)}
 {
     prefix = (fs->name != "index" ? fs->name + "." : "") + name + ".";
     make_all_stream_variables();
