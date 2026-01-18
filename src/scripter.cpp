@@ -127,11 +127,12 @@ int solve_model(lua_State* L) {
     return 1;
 }
 
-int eval_constraints(lua_State* L) {
+template <typename Eval_Thing_T>
+int eval_something(lua_State* L, Eval_Thing_T eval) {
     if (!M) return 0;
     auto n_args = lua_gettop(L);
     if (n_args == 0) {
-        M->eval_constraints();
+        eval(M.get());
         return 0;
     }
     for (int i = 1; i <= n_args; i++) {
@@ -140,17 +141,21 @@ int eval_constraints(lua_State* L) {
             if (!tp) continue;
             if (tp->type_idx == typeid(Model)) {
                 auto p = static_cast<Model*>(tp->ptr);
-                if (p) p->eval_constraints();
+                if (p) eval(p);
             }
             else if (tp->type_idx == typeid(Block)) {
                 if (tp->subtype_idx == typeid(Mixer)) {
                     auto p = static_cast<Mixer*>(tp->ptr);
-                    if (p) p->eval_constraints();
+                    if (p) eval(p);
                 } // TODO: add Splitter, Separator, etc.
             }
         }
     }
     return 0;
+}
+
+int eval_constraints(lua_State* L) {
+    return eval_something(L, [](auto* p) { p->eval_constraints(); });
 }
 
 int initialize_solver(lua_State* L) {
@@ -283,12 +288,12 @@ int change_unit(lua_State* L) {
         return 0;
 }
 
-template <typename Show_Things_T>
-int show(lua_State* L, Show_Things_T show_things) {
+template <typename Show_Thing_T>
+int show_something(lua_State* L, Show_Thing_T show_thing) {
     if (!M) return 0;
     auto n_args = lua_gettop(L);
     if (n_args == 0) {
-        show_things(M.get());
+        show_thing(M.get());
         return 0;
     }
     for (int i = 1; i <= n_args; i++) {
@@ -297,11 +302,11 @@ int show(lua_State* L, Show_Things_T show_things) {
             if (!tp) continue;
             if (tp->type_idx == typeid(Model)) {
                 auto p = static_cast<Model*>(tp->ptr);
-                if (p) show_things(p);
+                if (p) show_thing(p);
             }
             else if (tp->type_idx == typeid(Block)) {
                 auto p = static_cast<Block*>(tp->ptr);
-                if (p) show_things(p);
+                if (p) show_thing(p);
             }
         }
     }
@@ -309,11 +314,11 @@ int show(lua_State* L, Show_Things_T show_things) {
 }
 
 int show_constraints(lua_State* L) {
-    return show(L, [](auto* p) { p->show_constraints(); });
+    return show_something(L, [](auto* p) { p->show_constraints(); });
 }
 
 int show_variables(lua_State* L) {
-    return show(L, [](auto* p) { p->show_variables(); });
+    return show_something(L, [](auto* p) { p->show_variables(); });
 }
 
 int initialize_model(lua_State* L) {

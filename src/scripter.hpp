@@ -1,4 +1,5 @@
 #pragma once
+#include <climits>  // Necessary because luaconf.h uses LLONG_MAX, which isn't defined by gcc on MacOS
 #include <lua.hpp>
 #include <string>
 
