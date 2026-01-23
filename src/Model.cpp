@@ -80,13 +80,23 @@ Stream* Flowsheet::add_stream(const string&  name_,
 }
 
 char const* var_header = R"(
-              Name               Fix      Value          Lower          Upper      Units
---------------------------------|---|--------------|--------------|--------------|--------|
+|Index|              Name               Fix      Value          Lower          Upper      Units
+|-----|--------------------------------|---|--------------|--------------|--------------|--------|
 )";
 
 char const* con_header = R"(
-              Name                    Value
---------------------------------|--------------|
+|Index|              Name                    Value
+|-----|--------------------------------|--------------|
+)";
+
+char const* jac_header = R"(
+|Index|  Eq | Var |             Equation           |            Variable            |    Value     |
+|-----|-----|-----|--------------------------------|--------------------------------|--------------|
+)";
+
+char const* hess_header = R"(
+|Index|  Eq | Var1| Var2|             Equation           |            Variable 1          |            Variable 2          |    Value     |
+|-----|-----|-----|-----|--------------------------------|--------------------------------|--------------------------------|--------------|
 )";
 
 //---------------------------------------------------------
@@ -140,15 +150,43 @@ void Block::make_all_stream_variables() {
 }
 
 void Block::show_variables(ostream& os) const {
+    int count {0};
     os << var_header;
-    for (const auto var : x)
+    for (const auto var : x) {
         os << *var << '\n';
+        count++;
+    }
+    os << count << " Variable" << (count > 1 ? "s" : "") << " shown\n";
 }
 
 void Block::show_constraints(ostream& os) const {
+    int count {0};
     os << con_header;
-    for (const auto& con : g)
+    for (const auto& con : g) {
         os << *con << '\n';
+        count++;
+    }
+    os << count << " Constraint" << (count > 1 ? "s" : "") << " shown\n";
+}
+
+void Block::show_jacobian(ostream& os) const {
+    int count {0};
+    os << jac_header;
+    for (const auto& jnz : J) {
+        os << *jnz << '\n';
+        count++;
+    }
+    os << count << " Jacobian NZ" << (count > 1 ? "s" : "") << " shown\n";
+}
+
+void Block::show_hessian(ostream& os) const {
+    int count {0};
+    os << hess_header;
+    for (const auto& hnz : H) {
+        os << *hnz << '\n';
+        count++;
+    }
+    os << count << " Hessian NZ" << (count > 1 ? "s" : "") << " shown\n";
 }
 
 //---------------------------------------------------------
@@ -174,7 +212,9 @@ Constraint* Model::add_constraint(string_view name_)
 JacobianNZ* Model::add_J_NZ(Constraint* con,
                             Variable*   var) {
     J.push_back(make_unique<JacobianNZ>(con, var));
-    return J.back().get();
+    auto jnz_p = J.back().get();
+    jnz_p->ix = J.size() - 1;
+    return jnz_p;
 }
 
 HessianNZ* Model::add_H_NZ(Constraint* con,
@@ -182,22 +222,53 @@ HessianNZ* Model::add_H_NZ(Constraint* con,
                            Variable*   var2) {
     auto row_col = std::make_pair(std::max(var1->ix, var2->ix),
                                   std::min(var1->ix, var2->ix));
-    H[row_col].push_back(make_unique<HessianNZ>(con, var1, var2));
-    return H[row_col].back().get();
+    H_vec.push_back(make_unique<HessianNZ>(con, var1, var2));
+    auto hnz_p = H_vec.back().get();
+    H[row_col].push_back(hnz_p);
+    hnz_p->ix = H_vec.size() - 1;
+    return hnz_p;
 }
 
 //---------------------------------------------------------
 
 void Model::show_variables(ostream& os) const {
+    int count {0};
     os << var_header;
-    for (const auto& var : x_vec)
+    for (const auto& var : x_vec) {
         os << *var << '\n';
+        count++;
+    }
+    os << count << " Variable" << (count > 1 ? "s" : "") << " shown\n";
 }
 
 void Model::show_constraints(ostream& os) const {
+    int count {0};
     os << con_header;
-    for (const auto& con : g_vec)
+    for (const auto& con : g_vec) {
+        count++;
         os << *con << '\n';
+    }
+    os << count << " Constraint" << (count > 1 ? "s" : "") << " shown\n";
+}
+
+void Model::show_jacobian(ostream& os) const {
+    int count {0};
+    os << jac_header;
+    for (const auto& jnz : J) {
+        os << *jnz << '\n';
+        count++;
+    }
+    os << count << " Jacobian NZ" << (count > 1 ? "s" : "") << " shown\n";
+}
+
+void Model::show_hessian(ostream& os) const {
+    int count {0};
+    os << hess_header;
+    for (const auto& hnz : H_vec) {
+        os << *hnz << '\n';
+        count++;
+    }
+    os << count << " Hessian NZ" << (count > 1 ? "s" : "") << " shown\n";
 }
 
 bool Model::get_nlp_info(
@@ -381,6 +452,10 @@ void Model::finalize_solution(
 
 //---------------------------------------------------------
 
+string str(Index i) {
+    return format("{:>5}", i);
+}
+
 string str(double d) {
     return format("{:14.7g}", d);
 }
@@ -399,4 +474,12 @@ ostream& operator<<(ostream& os, const Variable& var) {
 
 ostream& operator<<(ostream& os, const Constraint& con) {
     return os << con.to_str();
+}
+
+ostream& operator<<(ostream& os, const JacobianNZ& jnz) {
+    return os << jnz.to_str();
+}
+
+ostream& operator<<(ostream& os, const HessianNZ& hnz) {
+    return os << hnz.to_str();
 }

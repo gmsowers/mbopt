@@ -5,6 +5,7 @@
 #include "scripter.hpp"
 #include "Model.hpp"
 #include "Mixer.hpp"
+#include "Splitter.hpp"
 
 static unique_ptr<Model> M;
 static Flowsheet*        FS;
@@ -117,7 +118,6 @@ void push_pointer(lua_State* L, T* p) {
     tp->ptr = p;
     tp->type_idx = typeid(T);
     tp->subtype_idx = typeid(sub_T);
-
 }
 
 int solve_model(lua_State* L) {
@@ -127,12 +127,12 @@ int solve_model(lua_State* L) {
     return 1;
 }
 
-template <typename Eval_Thing_T>
-int eval_something(lua_State* L, Eval_Thing_T eval) {
+template <typename Delegate_Func_T>
+int delegate(lua_State* L, Delegate_Func_T f) {
     if (!M) return 0;
     auto n_args = lua_gettop(L);
     if (n_args == 0) {
-        eval(M.get());
+        f(M.get());
         return 0;
     }
     for (int i = 1; i <= n_args; i++) {
@@ -141,13 +141,17 @@ int eval_something(lua_State* L, Eval_Thing_T eval) {
             if (!tp) continue;
             if (tp->type_idx == typeid(Model)) {
                 auto p = static_cast<Model*>(tp->ptr);
-                if (p) eval(p);
+                if (p) f(p);
             }
             else if (tp->type_idx == typeid(Block)) {
                 if (tp->subtype_idx == typeid(Mixer)) {
                     auto p = static_cast<Mixer*>(tp->ptr);
-                    if (p) eval(p);
-                } // TODO: add Splitter, Separator, etc.
+                    if (p) f(p);
+                } else if (tp->subtype_idx == typeid(Splitter)) {
+                    auto p = static_cast<Splitter*>(tp->ptr);
+                    if (p) f(p);
+                }
+                // TODO: add Splitter, Separator, etc.
             }
         }
     }
@@ -155,7 +159,15 @@ int eval_something(lua_State* L, Eval_Thing_T eval) {
 }
 
 int eval_constraints(lua_State* L) {
-    return eval_something(L, [](auto* p) { p->eval_constraints(); });
+    return delegate(L, [](auto* p) { p->eval_constraints(); });
+}
+
+int eval_jacobian(lua_State* L) {
+    return delegate(L, [](auto* p) { p->eval_jacobian(); });
+}
+
+int eval_hessian(lua_State* L) {
+    return delegate(L, [](auto* p) { p->eval_hessian(); });
 }
 
 int initialize_solver(lua_State* L) {
@@ -288,42 +300,24 @@ int change_unit(lua_State* L) {
         return 0;
 }
 
-template <typename Show_Thing_T>
-int show_something(lua_State* L, Show_Thing_T show_thing) {
-    if (!M) return 0;
-    auto n_args = lua_gettop(L);
-    if (n_args == 0) {
-        show_thing(M.get());
-        return 0;
-    }
-    for (int i = 1; i <= n_args; i++) {
-        if (lua_isuserdata(L, i)) {
-            auto tp = (TypedPtr*)lua_touserdata(L, -1);
-            if (!tp) continue;
-            if (tp->type_idx == typeid(Model)) {
-                auto p = static_cast<Model*>(tp->ptr);
-                if (p) show_thing(p);
-            }
-            else if (tp->type_idx == typeid(Block)) {
-                auto p = static_cast<Block*>(tp->ptr);
-                if (p) show_thing(p);
-            }
-        }
-    }
-    return 0;
-}
-
 int show_constraints(lua_State* L) {
-    return show_something(L, [](auto* p) { p->show_constraints(); });
+    return delegate(L, [](auto* p) { p->show_constraints(); });
 }
 
 int show_variables(lua_State* L) {
-    return show_something(L, [](auto* p) { p->show_variables(); });
+    return delegate(L, [](auto* p) { p->show_variables(); });
 }
 
-int initialize_model(lua_State* L) {
-    if (M) M->initialize();
-    return 0;
+int show_jacobian(lua_State* L) {
+    return delegate(L, [](auto* p) { p->show_jacobian(); });
+}
+
+int show_hessian(lua_State* L) {
+    return delegate(L, [](auto* p) { p->show_hessian(); });
+}
+
+int initialize(lua_State* L) {
+    return delegate(L, [](auto* p) { p->initialize(); });
 }
 
 const std::regex re_binop(R"((\S+)(=|<|>)([^\s_]+)(?:_(\S+))?)");
@@ -457,6 +451,46 @@ int add_Mixer(lua_State* L) {
     return 1;
 }
 
+int add_Splitter(lua_State* L) {
+    if (!FS) return 0;
+    const string msg {"Splitter: expected "};
+    auto n_args = lua_gettop(L);
+    check(L, n_args == 3, format("{}3 arguments, got {}.", msg, n_args));
+    check(L, lua_isstring(L, 1) && !lua_isnumber(L, 1), msg + "argument 1 to be a string.");
+    check(L, lua_isuserdata(L, 2), msg + "argument 2 to be a Stream pointer.");
+    check(L, lua_istable(L, 3), msg + "argument 3 to be a table of Stream pointers.");
+
+    // Block name,
+    string blk_name = lua_tostring(L, 1);               
+    check(L, !blk_name.empty(), msg + "argument 1 to be a non-empty string");
+
+    // Inlet stream.
+    lua_pushvalue(L, 2);
+    auto inlet = get_pointer<Stream>(L);
+    check(L, inlet != nullptr, format("{} argument 2 to be a pointer to a Stream", msg));
+
+    // List of outlet streams.
+    auto n_outlets = lua_rawlen(L, 3);
+    check(L, n_outlets > 1, msg + "argument 3 to be a table of at least two pointers to Streams");
+    vector<Stream*> outlets(n_outlets);
+    lua_pushvalue(L, 3);  // Push argument 3
+    for (lua_Unsigned i = 1; i <= n_outlets; i++) {
+        outlets[i - 1] = get_pointer_elem<Stream>(L, i,
+            format("{} element {} of argument 3 to be a pointer to a Stream", msg, i));
+        check(L, outlets[i - 1] != nullptr,
+            format("{} element {} of argument 3 to be a pointer to a Stream", msg, i));
+    }
+    lua_pop(L, 1);  // Pop argument 3
+
+    // Create the block.
+    auto blk_p = FS->add_block<Splitter>(blk_name, vector<Stream*>{inlet}, std::move(outlets));
+
+    // Push a pointer to a Block with subtype Mixer onto the stack.
+    push_pointer<Block, Splitter>(L, blk_p);
+
+    return 1;
+}
+
 int add_streams(lua_State* L) {
     if (!FS) return 0;
     const string msg {"Streams: expected "};
@@ -580,10 +614,12 @@ lua_State* start_lua() {
     
     lua_register(L, "Model",           create_model);
     lua_register(L, "Streams",         add_streams);
-    lua_register(L, "Mixer",           add_Mixer);
     lua_register(L, "Eval",            eval_expr);
-    lua_register(L, "InitModel",       initialize_model);
+    lua_register(L, "Init",            initialize);
     lua_register(L, "ShowVariables",   show_variables);
+    lua_register(L, "ShowConstraints", show_constraints);
+    lua_register(L, "ShowJacobian",    show_jacobian);
+    lua_register(L, "ShowHessian",     show_hessian);
     lua_register(L, "Val",             get_value);
     lua_register(L, "LB",              get_lower);
     lua_register(L, "UB",              get_upper);
@@ -594,7 +630,11 @@ lua_State* start_lua() {
     lua_register(L, "Solve",           solve_model);
     lua_register(L, "InitSolver",      initialize_solver);
     lua_register(L, "EvalConstraints", eval_constraints);
-    lua_register(L, "ShowConstraints", show_constraints);
+    lua_register(L, "EvalJacobian",    eval_jacobian);
+    lua_register(L, "EvalHessian",     eval_hessian);
+
+    lua_register(L, "Mixer",           add_Mixer);
+    lua_register(L, "Splitter",        add_Splitter);
 
     return L;
 }

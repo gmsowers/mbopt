@@ -8,8 +8,9 @@ n_test = 1
 
 -- set up the units for the model.
 kinds = {
-    massflow = { "kg/hr", "kg/hr"       },  -- {base_unit_str, default_unit_str}
-    massfrac = { "massfrac", "massfrac" }
+    massflow = { "kg/hr",    "kg/hr"    },  -- {base_unit_str, default_unit_str}
+    massfrac = { "massfrac", "massfrac" },
+    frac     = { "frac",     "frac"     }
 }
 units = {
     massflow = {
@@ -20,6 +21,10 @@ units = {
     massfrac = {
         { "massfrac", 1.0         },
         { "mass%",    1.0 / 100.0 }
+    },
+    frac = {
+        { "frac", 1.0 },
+        { "%",    1.0 }
     }
 }
 
@@ -109,7 +114,7 @@ print("Before init:\n")
 EvalConstraints()
 ShowConstraints()
 
-InitModel()
+Init()
 print("After init:\n")
 EvalConstraints(mix1)
 ShowConstraints(mix1)

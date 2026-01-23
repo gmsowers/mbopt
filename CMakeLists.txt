@@ -2,13 +2,17 @@ cmake_minimum_required(VERSION 3.30)
 project(test_mbopt LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_OSX_SYSROOT /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk CACHE FILEPATH "SDK dir" FORCE)
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set(CMAKE_OSX_SYSROOT /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk CACHE FILEPATH "SDK dir" FORCE)
+endif()
 
 add_executable(${CMAKE_PROJECT_NAME}
         src/test_mbopt.cpp
         src/scripter.cpp
         src/Model.cpp
-        src/Mixer.cpp)
+        src/Mixer.cpp
+        src/Splitter.cpp)
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src ../)
 
@@ -28,7 +32,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE /opt/homebrew/include/coin-or /opt/homebrew/include/lua)
     find_library(IPOPTLIB ipopt)
     find_library(LUALIB lua)
-    target_link_libraries(${CMAKE_PROJECT_NAME} ${IPOPTLIB} ${LUALIB} /opt/homebrew/opt/llvm/lib/c++/libc++.1.0.dylib)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        set(LIBC_PATH "/opt/homebrew/opt/llvm/lib/c++/libc++.1.0.dylib")
+    else()
+        set(LIBC_PATH "")
+    endif()
+    target_link_libraries(${CMAKE_PROJECT_NAME} ${IPOPTLIB} ${LUALIB} ${LIBC_PATH})
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
