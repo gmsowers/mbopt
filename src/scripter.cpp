@@ -413,123 +413,65 @@ int eval_expr(lua_State* L) {
     return 1;
 }
 
-int add_Mixer(lua_State* L) {
+template <typename T>
+int add_Block(lua_State* L, const string& blk_type) {
     if (!FS) return 0;
-    const string msg {"Mixer: expected "};
+    const string msg {blk_type + ": expected "};
     auto n_args = lua_gettop(L);
     check(L, n_args == 3, format("{}3 arguments, got {}.", msg, n_args));
     check(L, lua_isstring(L, 1) && !lua_isnumber(L, 1), msg + "argument 1 to be a string.");
-    check(L, lua_istable(L, 2), msg + "argument 2 to be a table of Stream pointers.");
-    check(L, lua_isuserdata(L, 3), msg + "argument 3 to be a Stream pointer.");
+    check(L, lua_istable(L, 2), msg + "argument 2 to be a table of Streams.");
+    check(L, lua_istable(L, 3), msg + "argument 3 to be a table of Streams.");
 
     // Block name,
     string blk_name = lua_tostring(L, 1);               
-    check(L, !blk_name.empty(), msg + "argument 1 to be a non-empty string");
+    check(L, !blk_name.empty(), msg + "argument 1 to be a non-empty string.");
 
-    // List of inlet streams.
+    // Table of inlet streams.
     auto n_inlets = lua_rawlen(L, 2);
-    check(L, n_inlets > 1, msg + "argument 2 to be a table of at least two pointers to Streams");
+    check(L, n_inlets > 0, msg + "argument 2 to be a table of at least one Stream.");
     vector<Stream*> inlets(n_inlets);
     lua_pushvalue(L, 2);    // Push argument 2 onto the stack.
     for (lua_Unsigned i = 1; i <= n_inlets; i++) {
         inlets[i - 1] = get_pointer_elem<Stream>(L, i,
-            format("{} element {} of argument 2 to be a pointer to a Stream", msg, i));
+            format("{} element {} of argument 2 to be a Stream", msg, i));
         check(L, inlets[i - 1] != nullptr,
-            format("{} element {} of argument 2 to be a pointer to a Stream", msg, i));
+            format("{} element {} of argument 2 to be a Stream", msg, i));
     }
     lua_pop(L, 1);  // Pop argument 2
 
+    // Table of outlet streams.
+    auto n_outlets = lua_rawlen(L, 3);
+    check(L, n_outlets > 0, msg + "argument 3 to be a table of at least one Stream.");
+    vector<Stream*> outlets(n_outlets);
     lua_pushvalue(L, 3);    // Push argument 3 onto the stack.
-    auto outlet = get_pointer<Stream>(L);
-    check(L, outlet != nullptr, format("{} argument 3 to be a pointer to a Stream", msg));
+    for (lua_Unsigned i = 1; i <= n_outlets; i++) {
+        outlets[i - 1] = get_pointer_elem<Stream>(L, i,
+            format("{} element {} of argument 3 to be a Stream.", msg, i));
+        check(L, outlets[i - 1] != nullptr,
+            format("{} element {} of argument 3 to be a Stream.", msg, i));
+    }
+    lua_pop(L, 1);  // Pop argument 3
 
     // Create the block.
-    auto blk_p = FS->add_block<Mixer>(blk_name, std::move(inlets), vector<Stream*>{outlet});
+    auto blk_p = FS->add_block<T>(blk_name, std::move(inlets), std::move(outlets));
 
-    // Push a pointer to a Block with subtype Mixer onto the stack.
-    push_pointer<Block, Mixer>(L, blk_p);
+    // Push a pointer to a Block with subtype T onto the stack.
+    push_pointer<Block, T>(L, blk_p);
 
     return 1;
+}
+
+int add_Mixer(lua_State* L) {
+    return add_Block<Mixer>(L, "Mixer");
 }
 
 int add_Splitter(lua_State* L) {
-    if (!FS) return 0;
-    const string msg {"Splitter: expected "};
-    auto n_args = lua_gettop(L);
-    check(L, n_args == 3, format("{}3 arguments, got {}.", msg, n_args));
-    check(L, lua_isstring(L, 1) && !lua_isnumber(L, 1), msg + "argument 1 to be a string.");
-    check(L, lua_isuserdata(L, 2), msg + "argument 2 to be a Stream pointer.");
-    check(L, lua_istable(L, 3), msg + "argument 3 to be a table of Stream pointers.");
-
-    // Block name,
-    string blk_name = lua_tostring(L, 1);               
-    check(L, !blk_name.empty(), msg + "argument 1 to be a non-empty string");
-
-    // Inlet stream.
-    lua_pushvalue(L, 2);
-    auto inlet = get_pointer<Stream>(L);
-    check(L, inlet != nullptr, format("{} argument 2 to be a pointer to a Stream", msg));
-
-    // List of outlet streams.
-    auto n_outlets = lua_rawlen(L, 3);
-    check(L, n_outlets > 1, msg + "argument 3 to be a table of at least two pointers to Streams");
-    vector<Stream*> outlets(n_outlets);
-    lua_pushvalue(L, 3);  // Push argument 3
-    for (lua_Unsigned i = 1; i <= n_outlets; i++) {
-        outlets[i - 1] = get_pointer_elem<Stream>(L, i,
-            format("{} element {} of argument 3 to be a pointer to a Stream", msg, i));
-        check(L, outlets[i - 1] != nullptr,
-            format("{} element {} of argument 3 to be a pointer to a Stream", msg, i));
-    }
-    lua_pop(L, 1);  // Pop argument 3
-
-    // Create the block.
-    auto blk_p = FS->add_block<Splitter>(blk_name, vector<Stream*>{inlet}, std::move(outlets));
-
-    // Push a pointer to a Block with subtype Splitter onto the stack.
-    push_pointer<Block, Splitter>(L, blk_p);
-
-    return 1;
+    return add_Block<Splitter>(L, "Splitter");
 }
 
 int add_Separator(lua_State* L) {
-    if (!FS) return 0;
-    const string msg {"Separator: expected "};
-    auto n_args = lua_gettop(L);
-    check(L, n_args == 3, format("{}3 arguments, got {}.", msg, n_args));
-    check(L, lua_isstring(L, 1) && !lua_isnumber(L, 1), msg + "argument 1 to be a string.");
-    check(L, lua_isuserdata(L, 2), msg + "argument 2 to be a Stream pointer.");
-    check(L, lua_istable(L, 3), msg + "argument 3 to be a table of Stream pointers.");
-
-    // Block name,
-    string blk_name = lua_tostring(L, 1);               
-    check(L, !blk_name.empty(), msg + "argument 1 to be a non-empty string");
-
-    // Inlet stream.
-    lua_pushvalue(L, 2);
-    auto inlet = get_pointer<Stream>(L);
-    check(L, inlet != nullptr, format("{} argument 2 to be a pointer to a Stream", msg));
-
-    // List of outlet streams.
-    auto n_outlets = lua_rawlen(L, 3);
-    check(L, n_outlets > 1, msg + "argument 3 to be a table of at least two pointers to Streams");
-    vector<Stream*> outlets(n_outlets);
-    lua_pushvalue(L, 3);  // Push argument 3
-    for (lua_Unsigned i = 1; i <= n_outlets; i++) {
-        outlets[i - 1] = get_pointer_elem<Stream>(L, i,
-            format("{} element {} of argument 3 to be a pointer to a Stream", msg, i));
-        check(L, outlets[i - 1] != nullptr,
-            format("{} element {} of argument 3 to be a pointer to a Stream", msg, i));
-    }
-    lua_pop(L, 1);  // Pop argument 3
-
-    // Create the block.
-    auto blk_p = FS->add_block<Separator>(blk_name, vector<Stream*>{inlet}, std::move(outlets));
-
-    // Push a pointer to a Block with subtype Separator onto the stack.
-    push_pointer<Block, Separator>(L, blk_p);
-
-    return 1;
+    return add_Block<Separator>(L, "Separator");
 }
 
 int add_streams(lua_State* L) {

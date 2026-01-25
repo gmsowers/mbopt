@@ -49,7 +49,7 @@ print("Test 2 passed")
 n_test = n_test + 1
 
 -- test 3: Create a Separator block.
-sep1 = Separator("sep1", IN, { OUT1, OUT2 })
+sep1 = Separator("sep1", { IN }, { OUT1, OUT2 })
 if sep1 == nil then goto FAILED end
 print("Test 3 passed")
 n_test = n_test + 1

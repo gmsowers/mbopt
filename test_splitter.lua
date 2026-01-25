@@ -49,7 +49,7 @@ print("Test 2 passed")
 n_test = n_test + 1
 
 -- test 3: Create a Splitter block.
-spl1 = Splitter("spl1", IN, { OUT1, OUT2 })
+spl1 = Splitter("spl1", { IN }, { OUT1, OUT2 })
 if spl1 == nil then goto FAILED end
 print("Test 3 passed")
 n_test = n_test + 1
