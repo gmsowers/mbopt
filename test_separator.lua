@@ -29,7 +29,7 @@ units = {
 }
 
 -- test 1: Create a model.
-M, FS = Model("test_splitter", "index", kinds, units)
+M, FS = Model("test_separator", "index", kinds, units)
 if M == nil or FS == nil then goto FAILED end
 print("Test 1 passed")
 n_test = n_test + 1
@@ -37,7 +37,7 @@ n_test = n_test + 1
 -- test 2: Add three streams.
 IN_comps = {"H2", "O2" }
 OUT1_comps = { "H2", "O2" }
-OUT2_comps = OUT1_comps
+OUT2_comps = { "O2" }
 
 IN, OUT1, OUT2 = Streams(
     { "IN", IN_comps },
@@ -48,33 +48,29 @@ if IN == nil or OUT1 == nil or OUT2 == nil then goto FAILED end
 print("Test 2 passed")
 n_test = n_test + 1
 
--- test 3: Create a Splitter block.
-spl1 = Splitter("spl1", IN, { OUT1, OUT2 })
-if spl1 == nil then goto FAILED end
+-- test 3: Create a Separator block.
+sep1 = Separator("sep1", IN, { OUT1, OUT2 })
+if sep1 == nil then goto FAILED end
 print("Test 3 passed")
 n_test = n_test + 1
 
 ok = Eval([[
-    spl1.IN.mass_H2 = 1.0
-    spl1.IN.mass_O2 = 2.0
-    spl1.OUT1.splitfrac = 0.3
-    spl1.OUT2.splitfrac = 0.7
+    sep1.IN.mass_H2 = 1.0
+    sep1.IN.mass_O2 = 1.0
+    sep1.OUT1.split_O2 = 0.3
     ]]
 )
-ShowVariables()
-Init()
-ShowVariables(spl1)
 
+Init()
+ShowVariables()
 EvalConstraints()
 ShowConstraints()
-
 EvalJacobian()
 ShowJacobian()
-
 EvalHessian()
 ShowHessian()
 
-ok = Eval("spl1.IN.mass_H2 = 2.0")
+ok = Eval("sep1.IN.mass_H2 = 2.0")
 print("Before solve:\n")
 ShowVariables()
 

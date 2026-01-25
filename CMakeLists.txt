@@ -12,9 +12,11 @@ add_executable(${CMAKE_PROJECT_NAME}
         src/scripter.cpp
         src/Model.cpp
         src/Mixer.cpp
-        src/Splitter.cpp)
+        src/Splitter.cpp
+        src/Separator.cpp
+        )
 
-target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src ../)
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     set(IPOPT_DIR "$ENV{USERPROFILE}\\filen\\dev\\cpp\\ipopt")

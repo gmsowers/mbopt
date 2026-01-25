@@ -465,7 +465,7 @@ string str(Ndouble nd) {
 }
 
 string str(VariableSpec spec) {
-    return spec == VariableSpec::Fixed ? " F " : "   ";
+    return spec == VariableSpec::Fixed ? " ==" : "   ";
 }
 
 ostream& operator<<(ostream& os, const Variable& var) {
