@@ -14,6 +14,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         src/Mixer.cpp
         src/Splitter.cpp
         src/Separator.cpp
+        src/YieldReactor.cpp
         )
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)

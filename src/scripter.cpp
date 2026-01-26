@@ -7,6 +7,7 @@
 #include "Mixer.hpp"
 #include "Splitter.hpp"
 #include "Separator.hpp"
+#include "YieldReactor.hpp"
 
 static unique_ptr<Model> M;
 static Flowsheet*        FS;
@@ -474,6 +475,10 @@ int add_Separator(lua_State* L) {
     return add_Block<Separator>(L, "Separator");
 }
 
+int add_YieldReactor(lua_State* L) {
+    return add_Block<YieldReactor>(L, "YieldReactor");
+}
+
 int add_streams(lua_State* L) {
     if (!FS) return 0;
     const string msg {"Streams: expected "};
@@ -619,6 +624,7 @@ lua_State* start_lua() {
     lua_register(L, "Mixer",           add_Mixer);
     lua_register(L, "Splitter",        add_Splitter);
     lua_register(L, "Separator",       add_Separator);
+    lua_register(L, "YieldReactor",    add_YieldReactor);
 
     return L;
 }

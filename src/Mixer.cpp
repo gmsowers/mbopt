@@ -1,5 +1,4 @@
 #include <cassert>
-#include <iostream>
 #include "Mixer.hpp"
 
 Mixer::Mixer(string_view       name_,
