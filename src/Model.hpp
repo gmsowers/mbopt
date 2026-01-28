@@ -311,6 +311,47 @@ private:
     void set_inlet_stream_specs();
 };
 
+void call_lua_function(const string& func_name);
+
+class Calc
+{
+public:
+    string                             name    {};
+    Flowsheet*                         fs      {};
+    string                             prefix  {};
+    vector<Variable*>                  x       {};
+    vector<Constraint*>                g       {};
+    vector<JacobianNZ*>                J       {};
+    vector<HessianNZ*>                 H       {};
+
+    Calc() = default;
+    Calc(string_view       name_,
+         Flowsheet*        fs_);
+
+    void initialize() {
+        string func_name = name + "_init";
+        call_lua_function(func_name);
+    }
+    void eval_constraints() {
+        string func_name = name + "_eval_constraints";
+        call_lua_function(func_name);
+    }
+    void eval_jacobian() {
+        string func_name = name + "_eval_jacobian";
+        call_lua_function(func_name);
+    }
+    void eval_hessian() {
+        string func_name = name + "_eval_hessian";
+        call_lua_function(func_name);
+    }
+
+    void show_variables(ostream& os = cout) const;
+    void show_constraints(ostream& os = cout) const;
+    void show_jacobian(ostream& os = cout) const;
+    void show_hessian(ostream& os = cout) const;
+
+};
+
 //---------------------------------------------------------
 
 class Flowsheet
@@ -324,6 +365,8 @@ public:
     vector<unique_ptr<Flowsheet>>             children;
     vector<unique_ptr<Block>>                 blocks;
     unordered_map<string, Block*>             blocks_map;
+    vector<unique_ptr<Calc>>                  calcs;
+    unordered_map<string, Calc*>              calcs_map;
     unordered_map<string, unique_ptr<Stream>> streams;
 
     Flowsheet(string_view name_,
@@ -362,10 +405,19 @@ public:
         return blk_p;
     }
 
+    Calc* add_calc(string_view name_) {
+        auto calc = make_unique<Calc>(name_, this);
+        auto calc_p = calc.get();
+        calcs_map[calc->name] = calc_p;
+        calcs.push_back(std::move(calc));
+        return calc_p;
+    }
+
 private:
     template <typename T>
     void eval(T feval) {
         for (const auto& blk : blocks)   feval(blk);
+        for (const auto& clc : calcs)    feval(clc);
         for (const auto& fs  : children) feval(fs);
     }
 

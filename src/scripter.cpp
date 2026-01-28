@@ -11,6 +11,7 @@
 
 static unique_ptr<Model> M;
 static Flowsheet*        FS;
+static lua_State*        scripter_lua_state;
 
 static IpoptApplication* solver = IpoptApplicationFactory();
 
@@ -152,8 +153,18 @@ int delegate(lua_State* L, Delegate_Func_T f) {
                 } else if (tp->subtype_idx == typeid(Splitter)) {
                     auto p = static_cast<Splitter*>(tp->ptr);
                     if (p) f(p);
+                } else if (tp->subtype_idx == typeid(Separator)) {
+                    auto p = static_cast<Splitter*>(tp->ptr);
+                    if (p) f(p);
+                } else if (tp->subtype_idx == typeid(YieldReactor)) {
+                    auto p = static_cast<Splitter*>(tp->ptr);
+                    if (p) f(p);
                 }
-                // TODO: add Splitter, Separator, etc.
+                // TODO: add remaining Blocks.
+            }
+            else if (tp->type_idx == typeid(Calc)) {
+                auto p = static_cast<Calc*>(tp->ptr);
+                if (p) f(p);
             }
         }
     }
@@ -229,6 +240,10 @@ int get_value(lua_State* L) {
     return get_variable_attr(L, [](auto* p){ return p->value; });
 }
 
+int get_base_value(lua_State* L) {
+    return get_variable_attr(L, [](auto* p){ return p->convert_to_base(); });
+}
+
 int get_lower(lua_State* L) {
     return get_variable_attr(L, [](auto* p){ return p->lower; });
 }
@@ -257,10 +272,32 @@ int get_var(lua_State* L) {
         string name = lua_tostring(L, -1);
         if (M->x_map.contains(name)) {
             push_pointer<Variable>(L, M->x_map[name]);
-            return 1;
+            push_pointer<Unit>(L, M->x_map[name]->unit);
+            return 2;
         }
     }
     return 0;
+}
+
+int get_unit(lua_State* L) {
+    if (!M) return 0;
+    auto n_args = lua_gettop(L);
+    if (n_args == 0) return 0;
+    if (n_args >= 1) {
+        if (lua_isstring(L, -1)) {
+            string arg = lua_tostring(L, -1);
+            if (M->x_map.contains(arg)) {
+                push_pointer<Unit>(L, M->x_map[arg]->unit);
+                return 1;
+            }
+            else if (M->unit_set.units.contains(arg)) {
+                push_pointer<Unit>(L, M->unit_set.units[arg].get());
+                return 1;
+            }
+        }
+    }
+    return 0;
+
 }
 
 int change_unit(lua_State* L) {
@@ -300,6 +337,38 @@ int change_unit(lua_State* L) {
     }
     else
         return 0;
+}
+
+int set_value(lua_State* L) {
+    if (!M) return 0;
+    const string msg {"SetValue: expected "};
+    auto n_args = lua_gettop(L);
+    check(L, n_args == 2, msg + format("{}2 arguments, got {}.", msg, n_args));
+    check(L, lua_isuserdata(L, 1), msg + "argument 1 to be a Variable, Constraint, JacobianNZ, or HessianNZ.");
+    check(L, lua_isnumber(L, 2), msg + "argument 2 to be a number.");
+    auto tp = (TypedPtr*)lua_touserdata(L, 1);
+    double val = lua_tonumber(L, 2);
+    check(L, tp != nullptr, msg + "argument 1 not to be null."); 
+    if (tp->type_idx == typeid(Variable)) {
+        auto var = static_cast<Variable*>(tp->ptr);
+        var->convert_and_set(val);
+    }
+    else if (tp->type_idx == typeid(Constraint)) {
+        auto con = static_cast<Constraint*>(tp->ptr);
+        con->value = val;
+    }
+    else if (tp->type_idx == typeid(JacobianNZ)) {
+        auto jnz = static_cast<JacobianNZ*>(tp->ptr);
+        jnz->value = val;
+    }
+    else if (tp->type_idx == typeid(HessianNZ)) {
+        auto hnz = static_cast<HessianNZ*>(tp->ptr);
+        hnz->value = val;
+    }
+    else
+        check(L, false, msg + "argument 1 to be a Variable, Constraint, JacobianNZ, or HessianNZ.");
+
+     return 0;
 }
 
 int show_constraints(lua_State* L) {
@@ -479,6 +548,111 @@ int add_YieldReactor(lua_State* L) {
     return add_Block<YieldReactor>(L, "YieldReactor");
 }
 
+int add_Calc(lua_State* L) {
+    if (!FS) return 0;
+    const string msg {"Calc: expected "};
+    auto n_args = lua_gettop(L);
+    check(L, n_args == 1, format("{}1 argument, got {}.", msg, n_args));
+    check(L, lua_isstring(L, 1) && !lua_isnumber(L, 1), msg + "argument 1 to be a string.");
+
+    // Calc name,
+    string calc_name = lua_tostring(L, 1);               
+    check(L, !calc_name.empty(), msg + "argument 1 to be a non-empty string.");
+
+    // Create the calc.
+    auto calc_p = FS->add_calc(calc_name);
+
+    // Push a pointer to a Calc onto the stack.
+    push_pointer<Calc>(L, calc_p);
+
+    return 1;
+}
+
+int add_variables(lua_State* L) {
+    if (!M) return 0;
+    const string msg {"Variables: expected "};
+    auto n_args = lua_gettop(L);
+    check(L, n_args >= 2, format("{}at leat 2 arguments, got {}.", msg, n_args));
+    check(L, lua_isuserdata(L, 1), msg + "argument 1 to be a Calc.");
+    lua_pushvalue(L, 1);   // push Calc pointer onto the stack
+    auto calc_p = get_pointer<Calc>(L);   // pops Calc pointer off stack
+    auto n_vars = n_args - 1;
+    vector<Variable*> vars(n_vars);
+    for (lua_Unsigned i = 2; i <= n_args; i++) {
+        check(L, lua_istable(L, i), format("{}argument {} to be a table.", msg, i));
+        auto n_elem = lua_rawlen(L, i);    // number of elements in the ith argument table
+        check(L, n_elem == 2, format("{}argument {} to look like {{string, Unit}}", msg, i));
+        lua_pushvalue(L, i);    // Push ith arg onto stack, where arg = {var_name, unit}
+        auto var_name = get_string_elem(L, 1, format("{}argument {} to look like {{string, Unit}}", msg, i));  // element 1 is variable name
+        auto unit = get_pointer_elem<Unit>(L, 2, format("{}argument {} to look like {{string, Unit}}", msg, i));  // element 2 is variable name
+        lua_pop(L, 1);
+        auto v = M->add_var(calc_p->prefix + var_name, unit);
+        calc_p->x.push_back(v);
+        vars[i - 2] = v;
+    }
+
+    // Push pointers to the created variables onto the stack.
+    for (int i = 1; i <= n_vars; i++)
+        push_pointer<Variable>(L, vars[i - 1]);
+
+    return n_vars;
+}
+
+int add_constraints(lua_State* L) {
+    if (!M) return 0;
+    const string msg {"Constraints: expected "};
+    auto n_args = lua_gettop(L);
+    check(L, n_args >= 2, format("{}at least 2 arguments, got {}.", msg, n_args));
+    check(L, lua_isuserdata(L, 1), msg + "argument 1 to be a Calc.");
+    lua_pushvalue(L, 1);   // push Calc pointer onto the stack
+    auto calc_p = get_pointer<Calc>(L);   // pops Calc pointer off stack
+    auto n_eqs = n_args - 1;
+    vector<Constraint*> eqs(n_eqs);
+    for (lua_Unsigned i = 2; i <= n_args; i++) {
+        check(L, lua_isstring(L, i), format("{}argument {} to be a string.", msg, i));
+        auto eq_name = lua_tostring(L, i);
+        auto eq = M->add_constraint(calc_p->prefix + eq_name);
+        calc_p->g.push_back(eq);
+        eqs[i - 2] = eq;
+    }
+
+    // Push pointers to the created constraints onto the stack.
+    for (int i = 1; i <= n_eqs; i++)
+        push_pointer<Constraint>(L, eqs[i - 1]);
+
+    return n_eqs;
+}
+
+int add_jacobian_nzs(lua_State* L) {
+    if (!M) return 0;
+    const string msg {"JacobianNZs: expected "};
+    auto n_args = lua_gettop(L);
+    check(L, n_args >= 2, format("{}at least 2 arguments, got {}.", msg, n_args));
+    check(L, lua_isuserdata(L, 1), msg + "argument 1 to be a Calc.");
+    lua_pushvalue(L, 1);   // push Calc pointer onto the stack
+    auto calc_p = get_pointer<Calc>(L);   // pops Calc pointer off stack
+    auto n_jnzs = n_args - 1;
+    vector<JacobianNZ*> jnzs(n_jnzs);
+    for (lua_Unsigned i = 2; i <= n_args; i++) {
+        check(L, lua_istable(L, i), format("{}argument {} to be a table.", msg, i));
+        auto n_elem = lua_rawlen(L, i);    // number of elements in the ith JNZ list
+        check(L, n_elem == 2, format("{}argument {} to look like {{Constraint, Variable}}", msg, i));
+        lua_pushvalue(L, i);    // Push ith arg onto stack, where arg = {con, var}
+        auto con = get_pointer_elem<Constraint>(L, 1, format("{}argument {} to look like {{Constraint, Variable}}", msg, i));  // element 1 is a Constraint
+        auto var = get_pointer_elem<Variable>(L, 2, format("{}argument {} to look like {{Constraint, Variable}}", msg, i));  // element 2 is a Variable
+        lua_pop(L, 1);
+        auto jnz = M->add_J_NZ(con, var);
+        calc_p->J.push_back(jnz);
+        jnzs[i - 2] = jnz;
+    }
+
+    // Push pointers to the created variables onto the stack.
+    for (int i = 1; i <= n_jnzs; i++)
+        push_pointer<JacobianNZ>(L, jnzs[i - 1]);
+
+    return n_jnzs;
+}
+
 int add_streams(lua_State* L) {
     if (!FS) return 0;
     const string msg {"Streams: expected "};
@@ -583,6 +757,13 @@ int create_model(lua_State* L) {
     return 2;
 }
 
+void call_lua_function(const string& func_name) {
+    auto L = scripter_lua_state;
+    lua_getglobal(L, func_name.c_str());
+    if (lua_pcall(L, 0, 0, 0) != LUA_OK)
+        luaL_error(L, format("{}: {}", func_name, lua_tostring(L, -1)).c_str());
+}
+
 LuaResult run_lua_script(lua_State* L, const char* script_file_name) {
     int result = luaL_dofile(L, script_file_name);
     
@@ -590,6 +771,7 @@ LuaResult run_lua_script(lua_State* L, const char* script_file_name) {
         string err_str = lua_tostring(L, -1);
         lua_pop(L, 1);
         lua_close(L);
+        scripter_lua_state = nullptr;
         return {.ok = false, .err_str = err_str};
     }
     return {.ok = true, .err_str = ""};
@@ -599,7 +781,8 @@ lua_State* start_lua() {
     auto L = luaL_newstate();
     if (!L) return nullptr;
     luaL_openlibs(L);
-    
+    scripter_lua_state = L;
+
     lua_register(L, "Model",           create_model);
     lua_register(L, "Streams",         add_streams);
     lua_register(L, "Eval",            eval_expr);
@@ -609,22 +792,29 @@ lua_State* start_lua() {
     lua_register(L, "ShowJacobian",    show_jacobian);
     lua_register(L, "ShowHessian",     show_hessian);
     lua_register(L, "Val",             get_value);
+    lua_register(L, "BaseVal",         get_base_value);
     lua_register(L, "LB",              get_lower);
     lua_register(L, "UB",              get_upper);
     lua_register(L, "Spec",            get_spec);
     lua_register(L, "Var",             get_var);
+    lua_register(L, "Unit",            get_unit);
     lua_register(L, "ChangeUnit",      change_unit);
+    lua_register(L, "SetValue",        set_value);
     lua_register(L, "SolverOption",    set_solver_option);
     lua_register(L, "Solve",           solve_model);
     lua_register(L, "InitSolver",      initialize_solver);
     lua_register(L, "EvalConstraints", eval_constraints);
     lua_register(L, "EvalJacobian",    eval_jacobian);
     lua_register(L, "EvalHessian",     eval_hessian);
+    lua_register(L, "Variables",       add_variables);
+    lua_register(L, "Constraints",     add_constraints);
+    lua_register(L, "JacobianNZs",     add_jacobian_nzs);
 
     lua_register(L, "Mixer",           add_Mixer);
     lua_register(L, "Splitter",        add_Splitter);
     lua_register(L, "Separator",       add_Separator);
     lua_register(L, "YieldReactor",    add_YieldReactor);
+    lua_register(L, "Calc",            add_Calc);
 
     return L;
 }

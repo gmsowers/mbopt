@@ -191,6 +191,57 @@ void Block::show_hessian(ostream& os) const {
 
 //---------------------------------------------------------
 
+Calc::Calc(string_view name_,
+           Flowsheet*  fs_) :
+    name {name_},
+    fs   {fs_}
+{
+    prefix = (fs->name != "index" ? fs->name + "." : "") + name + ".";
+}
+
+void Calc::show_variables(ostream& os) const {
+    int count {0};
+    os << var_header;
+    for (const auto var : x) {
+        os << *var << '\n';
+        count++;
+    }
+    os << count << " Variable" << (count > 1 ? "s" : "") << " shown\n";
+}
+
+void Calc::show_constraints(ostream& os) const {
+    int count {0};
+    os << con_header;
+    for (const auto& con : g) {
+        os << *con << '\n';
+        count++;
+    }
+    os << count << " Constraint" << (count > 1 ? "s" : "") << " shown\n";
+}
+
+void Calc::show_jacobian(ostream& os) const {
+    int count {0};
+    os << jac_header;
+    for (const auto& jnz : J) {
+        os << *jnz << '\n';
+        count++;
+    }
+    os << count << " Jacobian NZ" << (count > 1 ? "s" : "") << " shown\n";
+}
+
+void Calc::show_hessian(ostream& os) const {
+    int count {0};
+    os << hess_header;
+    for (const auto& hnz : H) {
+        os << *hnz << '\n';
+        count++;
+    }
+    os << count << " Hessian NZ" << (count > 1 ? "s" : "") << " shown\n";
+}
+
+
+//---------------------------------------------------------
+
 Variable* Model::add_var(string_view name_, Unit* unit)
 {
     x_vec.push_back(make_unique<Variable>(name_, unit));
