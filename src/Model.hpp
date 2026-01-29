@@ -130,7 +130,12 @@ public:
     void free()
         {spec = VariableSpec::Free;}
 
-    double convert_to_base() const
+    bool is_fixed()
+        {return (spec == VariableSpec::Fixed);}
+    bool is_free()
+        {return (spec == VariableSpec::Free);}
+
+        double convert_to_base() const
         {return value * unit->ratio + unit->offset;}
     double convert_to_base(double value_) const
         {return value_ * unit->ratio + unit->offset;}
@@ -311,6 +316,8 @@ private:
     void set_inlet_stream_specs();
 };
 
+//---------------------------------------------------------
+
 void call_lua_function(const string& func_name);
 
 class Calc
@@ -341,6 +348,7 @@ public:
         call_lua_function(func_name);
     }
     void eval_hessian() {
+        if (H.empty()) return;
         string func_name = name + "_eval_hessian";
         call_lua_function(func_name);
     }
@@ -349,6 +357,36 @@ public:
     void show_constraints(ostream& os = cout) const;
     void show_jacobian(ostream& os = cout) const;
     void show_hessian(ostream& os = cout) const;
+
+};
+
+//---------------------------------------------------------
+
+struct Connection
+{
+    Constraint* eq   {};
+    Variable*   var1 {};
+    Variable*   var2 {};   
+    JacobianNZ* jnz1 {};
+    JacobianNZ* jnz2 {};
+};
+
+struct Connections
+{
+    const string                   prefix   {"cnx."};
+    vector<unique_ptr<Connection>> conn_vec {};
+
+    void eval_constraints() {
+        for (const auto& conn_p : conn_vec)
+            *conn_p->eq = *conn_p->var1 - *conn_p->var2;
+    }
+
+    void eval_jacobian() {
+        for (const auto& conn_p : conn_vec) {
+            *conn_p->jnz1 = 1.0;
+            *conn_p->jnz2 = -1.0;
+        }
+    }
 
 };
 
@@ -433,18 +471,19 @@ public:
 class Model : public TNLP
 {
 public:
-    string                                  name;
-    unique_ptr<Flowsheet>                   index_fs;
-    UnitSet                                 unit_set;
-    vector<unique_ptr<Variable>>            x_vec;
-    unordered_map<string, Variable*>        x_map;
-    vector<unique_ptr<Constraint>>          g_vec;
-    unordered_map<string, Constraint*>      g_map;
-    vector<unique_ptr<JacobianNZ>>          J;
-    vector<unique_ptr<HessianNZ>>           H_vec;
+    string                             name;
+    unique_ptr<Flowsheet>              index_fs;
+    UnitSet                            unit_set;
+    Connections                        cnx {};
+    vector<unique_ptr<Variable>>       x_vec;
+    unordered_map<string, Variable*>   x_map;
+    vector<unique_ptr<Constraint>>     g_vec;
+    unordered_map<string, Constraint*> g_map;
+    vector<unique_ptr<JacobianNZ>>     J;
+    vector<unique_ptr<HessianNZ>>      H_vec;
     std::map<std::pair<Index, Index>,
-             vector<HessianNZ*>>            H;
-    bool                                    printiterate {true};
+             vector<HessianNZ*>>       H;
+    bool                               printiterate {true};
 
     Model() = default;
     
@@ -464,10 +503,12 @@ public:
     HessianNZ*  add_H_NZ(Constraint* con,
                          Variable*   var1,
                          Variable*   var2);
-    void        initialize()       { index_fs->initialize();       };
-    void        eval_constraints() { index_fs->eval_constraints(); };
-    void        eval_jacobian()    { index_fs->eval_jacobian();    };
-    void        eval_hessian()     { index_fs->eval_hessian();     };
+    Connection* add_connection(Variable* var1,
+                               Variable* var2);
+    void        initialize()       { index_fs->initialize(); };
+    void        eval_constraints() { index_fs->eval_constraints(); cnx.eval_constraints(); };
+    void        eval_jacobian()    { index_fs->eval_jacobian(); cnx.eval_jacobian(); };
+    void        eval_hessian()     { index_fs->eval_hessian(); };
     void        show_variables(ostream& os = cout) const;
     void        show_constraints(ostream& os = cout) const;
     void        show_jacobian(ostream& os = cout) const;

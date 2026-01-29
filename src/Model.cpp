@@ -280,7 +280,30 @@ HessianNZ* Model::add_H_NZ(Constraint* con,
     return hnz_p;
 }
 
-//---------------------------------------------------------
+Connection* Model::add_connection(Variable* var1,
+                                  Variable* var2) {
+    if (var1->is_free() && var2->is_free()) return nullptr;
+    if (var1->unit->kind != var2->unit->kind) return nullptr;
+
+    if (var1->is_fixed()) {
+        var1->free();
+    } else {
+        var2->free();
+    }
+
+    // Constraint is var1 - var2 == 0.
+    auto eq = add_constraint(format("{}{}=={}", cnx.prefix, var1->ix, var2->ix));
+
+    cnx.conn_vec.push_back(make_unique<Connection>(
+        eq,
+        var1,
+        var2,
+        add_J_NZ(eq, var1),
+        add_J_NZ(eq, var2)
+    ));
+
+    return cnx.conn_vec.back().get();
+}
 
 void Model::show_variables(ostream& os) const {
     int count {0};

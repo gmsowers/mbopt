@@ -101,7 +101,7 @@ struct TypedPtr {
 
 template <typename T>
 T* get_pointer(lua_State* L) {
-    auto tp = (TypedPtr*)lua_touserdata(L, -1);
+    auto tp = static_cast<TypedPtr*>(lua_touserdata(L, -1));
     T* ptr {};
     if (tp->type_idx == typeid(T))
         ptr = static_cast<T*>(tp->ptr);
@@ -117,7 +117,7 @@ T* get_pointer_elem(lua_State* L, int index, const string& err_msg) {
 
 template <typename T, typename sub_T = void>
 void push_pointer(lua_State* L, T* p) {
-    auto tp = (TypedPtr*)lua_newuserdatauv(L, sizeof(TypedPtr), 0);
+    auto tp = static_cast<TypedPtr*>(lua_newuserdatauv(L, sizeof(TypedPtr), 0));
     tp->ptr = p;
     tp->type_idx = typeid(T);
     tp->subtype_idx = typeid(sub_T);
@@ -140,7 +140,7 @@ int delegate(lua_State* L, Delegate_Func_T f) {
     }
     for (int i = 1; i <= n_args; i++) {
         if (lua_isuserdata(L, i)) {
-            auto tp = (TypedPtr*)lua_touserdata(L, -1);
+            auto tp = static_cast<TypedPtr*>(lua_touserdata(L, -1));
             if (!tp) continue;
             if (tp->type_idx == typeid(Model)) {
                 auto p = static_cast<Model*>(tp->ptr);
@@ -214,7 +214,7 @@ int get_variable_attr(lua_State* L, Get_Attr_T get_attr) {
     if (!M) return 0;
     if (lua_gettop(L) == 0) return 0;
     if (lua_isuserdata(L, -1)) {
-        auto tp = (TypedPtr*)lua_touserdata(L, -1);
+        auto tp = static_cast<TypedPtr*>(lua_touserdata(L, -1));
         if (!tp) return 0;
         if (tp->type_idx == typeid(Variable)) {
             auto p = static_cast<Variable*>(tp->ptr);
@@ -272,8 +272,7 @@ int get_var(lua_State* L) {
         string name = lua_tostring(L, -1);
         if (M->x_map.contains(name)) {
             push_pointer<Variable>(L, M->x_map[name]);
-            push_pointer<Unit>(L, M->x_map[name]->unit);
-            return 2;
+            return 1;
         }
     }
     return 0;
@@ -319,7 +318,7 @@ int change_unit(lua_State* L) {
             return 0;
     }
     else if (lua_isuserdata(L, -2)) {
-        auto tp = (TypedPtr*)lua_touserdata(L, -2);
+        auto tp = static_cast<TypedPtr*>(lua_touserdata(L, -2));
         if (!tp) return 0;
         string unit_str = lua_tostring(L, -1);
         if (tp->type_idx == typeid(Variable)) {
@@ -346,7 +345,7 @@ int set_value(lua_State* L) {
     check(L, n_args == 2, msg + format("{}2 arguments, got {}.", msg, n_args));
     check(L, lua_isuserdata(L, 1), msg + "argument 1 to be a Variable, Constraint, JacobianNZ, or HessianNZ.");
     check(L, lua_isnumber(L, 2), msg + "argument 2 to be a number.");
-    auto tp = (TypedPtr*)lua_touserdata(L, 1);
+    auto tp = static_cast<TypedPtr*>(lua_touserdata(L, 1));
     double val = lua_tonumber(L, 2);
     check(L, tp != nullptr, msg + "argument 1 not to be null."); 
     if (tp->type_idx == typeid(Variable)) {
@@ -389,6 +388,30 @@ int show_hessian(lua_State* L) {
 
 int initialize(lua_State* L) {
     return delegate(L, [](auto* p) { p->initialize(); });
+}
+
+int connect(lua_State* L) {
+    if (!M) return 0;
+    const string msg {"Connect: expected "};
+    auto n_args = lua_gettop(L);
+    check(L, n_args == 1 || n_args == 2, format("{}1 or 2 arguments, got {}.", msg, n_args));
+    check(L, lua_isuserdata(L, 1), msg + "argument 1 to be a Variable or a Stream.");
+    auto tp = static_cast<TypedPtr*>(lua_touserdata(L, 1));
+    check(L, tp != nullptr, msg + "argument 1 to be a Variable or a Stream.");
+    if (tp->type_idx == typeid(Variable)) {
+        auto var1 = static_cast<Variable*>(tp->ptr);
+        check(L, n_args == 2, msg + "2 arguments, both Variables.");
+        tp = static_cast<TypedPtr*>(lua_touserdata(L, 2));
+        check(L, (tp != nullptr) && (tp->type_idx == typeid(Variable)), msg + "argument 2 to be a Variable or a Stream.");
+        auto var2 = static_cast<Variable*>(tp->ptr);
+        auto conn = M->add_connection(var1, var2);
+        push_pointer<Connection>(L, conn);
+        return 1;
+    }
+    else if (tp->type_idx == typeid(Stream)) {
+        // TODO: connect_stream
+    }
+    return 0;
 }
 
 const std::regex re_binop(R"((\S+)(=|<|>)([^\s_]+)(?:_(\S+))?)");
@@ -809,6 +832,7 @@ lua_State* start_lua() {
     lua_register(L, "Variables",       add_variables);
     lua_register(L, "Constraints",     add_constraints);
     lua_register(L, "JacobianNZs",     add_jacobian_nzs);
+    lua_register(L, "Connect",         connect);
 
     lua_register(L, "Mixer",           add_Mixer);
     lua_register(L, "Splitter",        add_Splitter);
