@@ -246,6 +246,8 @@ vector<string>& operator+=(vector<string>& c1, const vector<string>& c2);
 
 //---------------------------------------------------------
 
+struct Connection;
+
 struct Stream
 {
     string         name;
@@ -263,6 +265,7 @@ struct Stream
         comps {std::move(comps_)}
     {}
 
+    Connection* connect();
     bool has_comp(string_view compID) const
     {
         return std::ranges::find(comps, compID) != comps.end();
@@ -369,7 +372,16 @@ struct Connection
     Variable*   var2 {};   
     JacobianNZ* jnz1 {};
     JacobianNZ* jnz2 {};
+
+    string to_str() const
+    {
+        return format("|{}|{}|{}|{:32}|{:32}|{}|", str(eq->ix), str(var1->ix),
+            str(var2->ix), var1->name, var2->name, str(eq->value));
+    }
+
 };
+
+ostream& operator<<(ostream& os, const Connection& conn);
 
 struct Connections
 {
@@ -424,7 +436,7 @@ public:
         }
     }
 
-    Flowsheet* add_child(string_view name_);
+    Flowsheet* add_flowsheet(string_view name_);
     Stream*    add_stream(const string&  name_,
                           vector<string> comps) noexcept;
 
@@ -449,6 +461,14 @@ public:
         calcs_map[calc->name] = calc_p;
         calcs.push_back(std::move(calc));
         return calc_p;
+    }
+
+    void connect_streams() {
+        for (const auto& fs : children)
+            fs->connect_streams();
+        for (const auto& [name, strm] : streams)
+            if (strm->to != nullptr && strm->from != nullptr)
+                auto conn_p = strm->connect();
     }
 
 private:
@@ -513,6 +533,7 @@ public:
     void        show_constraints(ostream& os = cout) const;
     void        show_jacobian(ostream& os = cout) const;
     void        show_hessian(ostream& os = cout) const;
+    void        show_connections(ostream& os = cout) const;
     Variable*   var(const string& name_) const {
         return x_map.contains(name_) ? x_map.at(name_) : nullptr;
     };

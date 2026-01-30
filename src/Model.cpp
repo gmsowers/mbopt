@@ -64,7 +64,22 @@ Ndouble Variable::change_unit(Model*        m,
 
 //---------------------------------------------------------
 
-Flowsheet* Flowsheet::add_child(string_view name_) {
+Connection* Stream::connect() {
+    if (!to || !from) return nullptr;
+    auto M = fs->m;
+    auto to_sv = to->x_strm[this];
+    auto from_sv = from->x_strm[this];
+    Connection* conn_p {};
+    for (const auto& c : comps) {
+        conn_p = M->add_connection(to_sv.mass[c], from_sv.mass[c]);
+        if (!conn_p) return nullptr;
+    }
+    return conn_p;
+}
+
+//---------------------------------------------------------
+
+Flowsheet* Flowsheet::add_flowsheet(string_view name_) {
     auto fs = make_unique<Flowsheet>(name_, this->m, parent);
     auto fs_p = fs.get();
     this->children.push_back(std::move(fs));
@@ -97,6 +112,11 @@ char const* jac_header = R"(
 char const* hess_header = R"(
 |Index|  Eq | Var1| Var2|             Equation           |            Variable 1          |            Variable 2          |    Value     |
 |-----|-----|-----|-----|--------------------------------|--------------------------------|--------------------------------|--------------|
+)";
+
+char const* conn_header = R"(
+|Index| Var1| Var2|            Variable 1          |            Variable 2          |    Value     |
+|-----|-----|-----|--------------------------------|--------------------------------|--------------|
 )";
 
 //---------------------------------------------------------
@@ -345,6 +365,16 @@ void Model::show_hessian(ostream& os) const {
     os << count << " Hessian NZ" << (count > 1 ? "s" : "") << " shown\n";
 }
 
+void Model::show_connections(ostream& os) const {
+    int count {0};
+    os << conn_header;
+    for (const auto& conn : cnx.conn_vec) {
+        os << *conn << '\n';
+        count++;
+    }
+    os << count << " connection" << (count > 1 ? "s" : "") << " shown\n";
+}
+
 bool Model::get_nlp_info(
     Index&          n,
     Index&          m,
@@ -556,4 +586,8 @@ ostream& operator<<(ostream& os, const JacobianNZ& jnz) {
 
 ostream& operator<<(ostream& os, const HessianNZ& hnz) {
     return os << hnz.to_str();
+}
+
+ostream& operator<<(ostream& os, const Connection& conn) {
+    return os << conn.to_str();
 }

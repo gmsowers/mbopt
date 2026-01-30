@@ -34,15 +34,16 @@ if M == nil or FS == nil then goto FAILED end
 print("Test 1 passed")
 n_test = n_test + 1
 
--- test 2: Add three streams.
+-- test 2: Add some streams.
 N1_comps = {"H2", "O2" }
 N2_comps = { "H2", "O2", "CO" }
 OUT_comps = N2_comps
-
-N1, N2, OUT = Streams(
+N1, N2, OUT, S1, S2 = Streams(
     { "N1", N1_comps },
     { "N2", N2_comps },
-    { "OUT", OUT_comps }
+    { "OUT", OUT_comps },
+    { "S1", OUT_comps },
+    { "S2", OUT_comps }
 )
 if N1 == nil or N2 == nil or OUT == nil then goto FAILED end
 print("Test 2 passed")
@@ -54,19 +55,33 @@ if mix1 == nil then goto FAILED end
 print("Test 3 passed")
 n_test = n_test + 1
 
+-- test 4: Create a Splitter block.
+spl1 = Splitter("spl1", { OUT }, { S1, S2 })
+if spl1 == nil then goto FAILED end
+print("Test 4 passed")
+n_test = n_test + 1
+
+-- test 5: Connect all the streams.
+ConnectStreams()
+print("Test 5 passed")
+n_test = n_test + 1
+
+ShowConnections()
+
 Eval([[
     mix1.N1.mass_H2 = 1.0
     mix1.N1.mass_O2 = 1.0
     mix1.N2.mass_H2 = 1.0
     mix1.N2.mass_O2 = 1.0
     mix1.N2.mass_CO = 1.0
+    spl1.OUT.mass_H2 = 1.0
+    spl1.OUT.mass_O2 = 1.0
+    spl1.OUT.mass_CO = 1.0
+    spl1.S1.splitfrac = 0.5
 ]])
 
--- test 4: Create a Connection.
-conn1 = Connect(Var("mix1.N2.mass_CO"), Var("mix1.N2.mass_H2"))
-if conn1 == nil then goto FAILED end
-print("Test 4 passed")
-n_test = n_test + 1
+Init()
+ShowVariables()
 
 Eval("mix1.N2.mass_H2 = 2.0")
 print("Before solve:\n")

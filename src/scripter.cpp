@@ -117,10 +117,14 @@ T* get_pointer_elem(lua_State* L, int index, const string& err_msg) {
 
 template <typename T, typename sub_T = void>
 void push_pointer(lua_State* L, T* p) {
-    auto tp = static_cast<TypedPtr*>(lua_newuserdatauv(L, sizeof(TypedPtr), 0));
-    tp->ptr = p;
-    tp->type_idx = typeid(T);
-    tp->subtype_idx = typeid(sub_T);
+    if (!p)
+        lua_pushnil(L);
+    else {
+        auto tp = static_cast<TypedPtr*>(lua_newuserdatauv(L, sizeof(TypedPtr), 0));
+        tp->ptr = p;
+        tp->type_idx = typeid(T);
+        tp->subtype_idx = typeid(sub_T);
+    }
 }
 
 int solve_model(lua_State* L) {
@@ -386,6 +390,13 @@ int show_hessian(lua_State* L) {
     return delegate(L, [](auto* p) { p->show_hessian(); });
 }
 
+int show_connections(lua_State* L) {
+    if (!M) return 0;
+    check(L, lua_gettop(L) == 0, "ShowConnections: expected no arguments.");
+    M->show_connections();
+    return 0;
+}
+
 int initialize(lua_State* L) {
     return delegate(L, [](auto* p) { p->initialize(); });
 }
@@ -409,8 +420,18 @@ int connect(lua_State* L) {
         return 1;
     }
     else if (tp->type_idx == typeid(Stream)) {
-        // TODO: connect_stream
+        auto strm = static_cast<Stream*>(tp->ptr);
+        auto conn = strm->connect();
+        push_pointer<Connection>(L, conn);
+        return 1;
     }
+    return 0;
+}
+
+int connect_streams(lua_State* L) {
+    if (!M) return 0;
+    check(L, lua_gettop(L) == 0, "ConnectStreams: expected no arguments.");
+    M->index_fs->connect_streams();
     return 0;
 }
 
@@ -708,6 +729,33 @@ int add_streams(lua_State* L) {
     return n_strms;
 }
 
+int flowsheet(lua_State* L) {
+    if (!FS) return 0;
+    const string msg {"Flowsheet: expected "};
+    int n_args = lua_gettop(L);
+    check(L, n_args < 2, format("{}0 or 1 argument, got {}.", msg, n_args));
+    if (n_args == 0) {
+        push_pointer<Flowsheet>(L, FS);
+        return 1;
+    }
+    check(L, lua_isstring(L, 1) || lua_isuserdata(L, 1), msg + "argument to be a string or a Flowsheet.");
+    Flowsheet* fs {};
+    if (lua_isstring(L, 1)) {
+        string fs_name = lua_tostring(L, 1);
+        fs = FS->add_flowsheet(fs_name);
+        push_pointer<Flowsheet>(L, fs);
+        return 1;
+    }
+    else if (lua_isuserdata(L, 1)) {
+        lua_pushvalue(L, 1);              // push pointer onto the stack
+        fs = get_pointer<Flowsheet>(L);   // pops pointer off stack
+        check(L, !fs, msg + "argument to be a string or a Flowsheet.");
+        FS = fs;
+        return 0;
+    }
+    return 0;
+}
+
 int create_model(lua_State* L) {
     const string msg_expected {"Model: expected "};
     const string msg_kinds {"Model: in the \"kinds\" table, expected "};
@@ -807,6 +855,7 @@ lua_State* start_lua() {
     scripter_lua_state = L;
 
     lua_register(L, "Model",           create_model);
+    lua_register(L, "Flowsheet",       flowsheet);
     lua_register(L, "Streams",         add_streams);
     lua_register(L, "Eval",            eval_expr);
     lua_register(L, "Init",            initialize);
@@ -814,6 +863,7 @@ lua_State* start_lua() {
     lua_register(L, "ShowConstraints", show_constraints);
     lua_register(L, "ShowJacobian",    show_jacobian);
     lua_register(L, "ShowHessian",     show_hessian);
+    lua_register(L, "ShowConnections", show_connections);
     lua_register(L, "Val",             get_value);
     lua_register(L, "BaseVal",         get_base_value);
     lua_register(L, "LB",              get_lower);
@@ -833,6 +883,7 @@ lua_State* start_lua() {
     lua_register(L, "Constraints",     add_constraints);
     lua_register(L, "JacobianNZs",     add_jacobian_nzs);
     lua_register(L, "Connect",         connect);
+    lua_register(L, "ConnectStreams",  connect_streams);
 
     lua_register(L, "Mixer",           add_Mixer);
     lua_register(L, "Splitter",        add_Splitter);

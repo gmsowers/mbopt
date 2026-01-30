@@ -83,6 +83,22 @@ Splitter::Splitter(string_view       name_,
 void Splitter::initialize() {
     const auto& sin = inlets[0];
 
+    // Calculate the values of free split fracs.
+    auto n_fixed = 0;
+    auto sum_fixed = 0.0;
+    for (const auto& frac : x_split)
+        if (frac->is_fixed()) {
+            n_fixed++;
+            sum_fixed += *frac;
+        }
+    auto n_free = x_split.size() - n_fixed;
+    if (n_free > 0) {
+        double free_frac = sum_fixed / n_free;
+        for (const auto& frac : x_split)
+            if (frac->is_free())
+                *frac = free_frac;
+    }
+    
     // Calculate total mass flow rate of inlet stream.
     double base_val {0.0};
     for (const auto& compID : sin->comps)
