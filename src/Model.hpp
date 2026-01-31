@@ -445,7 +445,7 @@ public:
                  vector<Stream*>&& inlet_strms,
                  vector<Stream*>&& outlet_strms,
                  blk_params_T&     ...blk_params) noexcept {
-                    
+             
         auto blk = make_unique<T>(name_, this, std::move(inlet_strms), std::move(outlet_strms), blk_params...);
         auto blk_p = blk.get();
         blocks_map[blk->name] = blk_p;
@@ -463,12 +463,20 @@ public:
         return calc_p;
     }
 
-    void connect_streams() {
+    bool connect_streams() {
+        bool ok {true};
         for (const auto& fs : children)
-            fs->connect_streams();
+            if (!fs->connect_streams())
+                ok = false;
         for (const auto& [name, strm] : streams)
-            if (strm->to != nullptr && strm->from != nullptr)
-                auto conn_p = strm->connect();
+            if (strm->to != nullptr && strm->from != nullptr) {
+                if (!strm->connect())
+                    ok = false;
+            }
+            else
+                ok = false;
+
+        return ok;
     }
 
 private:
@@ -525,6 +533,8 @@ public:
                          Variable*   var2);
     Connection* add_connection(Variable* var1,
                                Variable* var2);
+    bool        add_bridge(Stream* sfrom, Stream* sto);
+
     void        initialize()       { index_fs->initialize(); };
     void        eval_constraints() { index_fs->eval_constraints(); cnx.eval_constraints(); };
     void        eval_jacobian()    { index_fs->eval_jacobian(); cnx.eval_jacobian(); };

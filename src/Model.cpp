@@ -80,7 +80,7 @@ Connection* Stream::connect() {
 //---------------------------------------------------------
 
 Flowsheet* Flowsheet::add_flowsheet(string_view name_) {
-    auto fs = make_unique<Flowsheet>(name_, this->m, parent);
+    auto fs = make_unique<Flowsheet>(name_, this->m, this);
     auto fs_p = fs.get();
     this->children.push_back(std::move(fs));
     return fs_p;
@@ -323,6 +323,19 @@ Connection* Model::add_connection(Variable* var1,
     ));
 
     return cnx.conn_vec.back().get();
+}
+
+bool Model::add_bridge(Stream* sfrom, Stream* sto) {
+    if (sfrom->fs->m != sto->fs->m) return false;
+    if (sfrom->comps != sto->comps) return false;
+    auto M = sfrom->fs->m;
+    auto to_sv = sto->to->x_strm[sto];
+    auto from_sv = sfrom->from->x_strm[sfrom];
+    for (const auto& c : sfrom->comps) {
+        auto conn_p = M->add_connection(to_sv.mass[c], from_sv.mass[c]);
+        if (!conn_p) return false;
+    }
+    return true;
 }
 
 void Model::show_variables(ostream& os) const {

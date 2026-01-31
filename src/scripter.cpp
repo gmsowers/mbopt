@@ -430,9 +430,10 @@ int connect(lua_State* L) {
 
 int connect_streams(lua_State* L) {
     if (!M) return 0;
-    check(L, lua_gettop(L) == 0, "ConnectStreams: expected no arguments.");
-    M->index_fs->connect_streams();
-    return 0;
+    check(L, lua_gettop(L) == 0, "ConnectAll: expected no arguments.");
+    bool ok = M->index_fs->connect_streams();
+    lua_pushboolean(L, ok);
+    return 1;
 }
 
 const std::regex re_binop(R"((\S+)(=|<|>)([^\s_]+)(?:_(\S+))?)");
@@ -743,6 +744,7 @@ int flowsheet(lua_State* L) {
     if (lua_isstring(L, 1)) {
         string fs_name = lua_tostring(L, 1);
         fs = FS->add_flowsheet(fs_name);
+        FS = fs;
         push_pointer<Flowsheet>(L, fs);
         return 1;
     }
@@ -754,6 +756,43 @@ int flowsheet(lua_State* L) {
         return 0;
     }
     return 0;
+}
+
+int is_same_ptr(lua_State* L) {
+    const string msg {"Same: expected "};
+    int n_args = lua_gettop(L);
+    check(L, n_args == 2, format("{}2 arguments, got {}.", msg, n_args));
+    TypedPtr* tp1 {};
+    TypedPtr* tp2 {};
+    if (lua_isuserdata(L, 1)) {
+        tp1 = static_cast<TypedPtr*>(lua_touserdata(L, 1));
+        check(L, tp1, msg + "argument 1 to be a TypedPtr.");        
+    }
+    if (lua_isuserdata(L, 2)) {
+        tp2 = static_cast<TypedPtr*>(lua_touserdata(L, 2));
+        check(L, tp2, msg + "argument 2 to be a TypedPtr.");        
+    }
+    bool is_same = (tp1->ptr == tp2->ptr);
+    lua_pushboolean(L, is_same);
+    return 1;
+}
+
+int add_bridge(lua_State* L) {
+    if (!M) return 0;
+    const string msg {"Bridge: expected "};
+    int n_args = lua_gettop(L);
+    check(L, n_args == 2, format("{}2 arguments, got {}.", msg, n_args));
+    Stream* strm_from {};
+    Stream* strm_to {};
+    lua_pushvalue(L, 1);
+    strm_from = get_pointer<Stream>(L);
+    check(L, strm_from, msg + "argument 1 to be a Stream.");
+    lua_pushvalue(L, 2);        
+    strm_to = get_pointer<Stream>(L);
+    check(L, strm_to, msg + "argument 2 to be a Stream.");
+    bool ok = M->add_bridge(strm_from, strm_to);
+    lua_pushboolean(L, ok);
+    return 1;
 }
 
 int create_model(lua_State* L) {
@@ -883,7 +922,9 @@ lua_State* start_lua() {
     lua_register(L, "Constraints",     add_constraints);
     lua_register(L, "JacobianNZs",     add_jacobian_nzs);
     lua_register(L, "Connect",         connect);
-    lua_register(L, "ConnectStreams",  connect_streams);
+    lua_register(L, "ConnectAll",      connect_streams);
+    lua_register(L, "Same",            is_same_ptr);
+    lua_register(L, "Bridge",          add_bridge);
 
     lua_register(L, "Mixer",           add_Mixer);
     lua_register(L, "Splitter",        add_Splitter);
