@@ -130,24 +130,24 @@ public:
     void free()
         {spec = VariableSpec::Free;}
 
-    bool is_fixed()
+    bool is_fixed() const
         {return (spec == VariableSpec::Fixed);}
-    bool is_free()
+    bool is_free() const
         {return (spec == VariableSpec::Free);}
 
-        double convert_to_base() const
+    double convert_to_base() const
         {return value * unit->ratio + unit->offset;}
     double convert_to_base(double value_) const
         {return value_ * unit->ratio + unit->offset;}
-    double convert_to_base(double value_, Unit* u) const
+    double convert_to_base(double value_, const Unit* u) const
         {return value_ * u->ratio + u->offset;}
     double convert_from_base(double base_value) const
         {return (base_value - unit->offset) / unit->ratio;}
     void   convert_and_set(double base_value)
         {value = (base_value - unit->offset) / unit->ratio;}
-    void   convert_and_set(double value_, Unit* u)
+    void   convert_and_set(double value_, const Unit* u)
         {value = convert_from_base(convert_to_base(value_, u));}
-    double convert(double value_, Unit* u) const
+    double convert(double value_, const Unit* u) const
         {return (u == unit ? value_ : convert_from_base(convert_to_base(value_, u)));}
 
     Ndouble change_unit(Model* m, const string& new_unit_str);
@@ -312,6 +312,7 @@ public:
     void show_constraints(ostream& os = cout) const;
     void show_jacobian(ostream& os = cout) const;
     void show_hessian(ostream& os = cout) const;
+    void show_summary(ostream& os = cout) const {}
 
 private:
     void make_stream_variables(Stream* strm);
@@ -338,19 +339,19 @@ public:
     Calc(string_view       name_,
          Flowsheet*        fs_);
 
-    void initialize() {
+    void initialize() const {
         string func_name = name + "_init";
         call_lua_function(func_name);
     }
-    void eval_constraints() {
+    void eval_constraints() const {
         string func_name = name + "_eval_constraints";
         call_lua_function(func_name);
     }
-    void eval_jacobian() {
+    void eval_jacobian() const {
         string func_name = name + "_eval_jacobian";
         call_lua_function(func_name);
     }
-    void eval_hessian() {
+    void eval_hessian() const {
         if (H.empty()) return;
         string func_name = name + "_eval_hessian";
         call_lua_function(func_name);
@@ -360,6 +361,7 @@ public:
     void show_constraints(ostream& os = cout) const;
     void show_jacobian(ostream& os = cout) const;
     void show_hessian(ostream& os = cout) const;
+    void show_summary(ostream& os = cout) const {}
 
 };
 
@@ -468,7 +470,7 @@ public:
         for (const auto& fs : children)
             if (!fs->connect_streams())
                 ok = false;
-        for (const auto& [name, strm] : streams)
+        for (const auto& [name_, strm] : streams)
             if (strm->to != nullptr && strm->from != nullptr) {
                 if (!strm->connect())
                     ok = false;
@@ -492,6 +494,9 @@ public:
     void eval_constraints() { eval([](const auto& ptr) { ptr->eval_constraints(); }); }
     void eval_jacobian()    { eval([](const auto& ptr) { ptr->eval_jacobian(); }); }
     void eval_hessian()     { eval([](const auto& ptr) { ptr->eval_hessian(); }); }
+
+    void show_summary(ostream& os = cout) const {}
+
 };
 
 //---------------------------------------------------------
@@ -544,6 +549,7 @@ public:
     void        show_jacobian(ostream& os = cout) const;
     void        show_hessian(ostream& os = cout) const;
     void        show_connections(ostream& os = cout) const;
+    void        show_summary(ostream& os = cout) const;
     Variable*   var(const string& name_) const {
         return x_map.contains(name_) ? x_map.at(name_) : nullptr;
     };

@@ -1,5 +1,3 @@
-#include <cassert>
-#include <iostream>
 #include "YieldReactor.hpp"
 
 YieldReactor::YieldReactor(string_view       name_,
@@ -10,13 +8,11 @@ YieldReactor::YieldReactor(string_view       name_,
 {
     const auto& sin = inlets[0];
     const auto& sout = outlets[0];
-    auto m = fs->m;
+    const auto m = fs->m;
 
-    Constraint* eq;
-    
     // Total mass flow definition for inlet and outlet streams, \sum_{Cj in comps}(rx1.Si.mass_Cj) - rx1.Si.mass == 0,
     //     for Si in inlet and outlet streams, Cj in comps.
-    eq = m->add_constraint(prefix + sin->name + "_total_mass_def");
+    auto eq = m->add_constraint(prefix + sin->name + "_total_mass_def");
     g.push_back(eq);
     for (const auto& compID : sin->comps)
         J.push_back(m->add_J_NZ(eq, x_strm[sin].mass.at(compID)));
@@ -151,12 +147,10 @@ void YieldReactor::eval_constraints()
         *g[ic] += *x_strm[sin].mass.at(compID);
     *g[ic++] -= *x_strm[sin].total_mass;
 
-    for (const auto& sout : outlets) {
-        *g[ic] = 0.0;
-        for (const auto& compID : sout->comps)
-            *g[ic] += *x_strm[sout].mass.at(compID);
-        *g[ic++] -= *x_strm[sout].total_mass;
-    }
+    *g[ic] = 0.0;
+    for (const auto& compID : sout->comps)
+        *g[ic] += *x_strm[sout].mass.at(compID);
+    *g[ic++] -= *x_strm[sout].total_mass;
 
     // Mass fraction definitions, (sep1.Si.mass * sep1.Si.massfrac_Cj) - sep1.Si.mass_Cj == 0
     //    for Si in inlet and outlet streams, Cj in comps.

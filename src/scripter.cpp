@@ -390,6 +390,10 @@ int show_hessian(lua_State* L) {
     return delegate(L, [](auto* p) { p->show_hessian(); });
 }
 
+int show_summary(lua_State* L) {
+    return delegate(L, [](auto* p) { p->show_summary(); });
+}
+
 int show_connections(lua_State* L) {
     if (!M) return 0;
     check(L, lua_gettop(L) == 0, "ShowConnections: expected no arguments.");
@@ -898,6 +902,7 @@ lua_State* start_lua() {
     lua_register(L, "Streams",         add_streams);
     lua_register(L, "Eval",            eval_expr);
     lua_register(L, "Init",            initialize);
+    lua_register(L, "Show",            show_summary);
     lua_register(L, "ShowVariables",   show_variables);
     lua_register(L, "ShowConstraints", show_constraints);
     lua_register(L, "ShowJacobian",    show_jacobian);

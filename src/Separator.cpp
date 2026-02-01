@@ -1,5 +1,4 @@
 #include <cassert>
-#include <iostream>
 #include "Separator.hpp"
 
 Separator::Separator(string_view       name_,
@@ -16,17 +15,15 @@ Separator::Separator(string_view       name_,
         outlet_comps_union += sout->comps;
     assert(outlet_comps_union == sin->comps);
 
-    Constraint* eq;
-    
     // Total mass flow definition for all streams, \sum_{Cj in comps}(sep1.Si.mass_Cj) - sep1.Si.mass == 0,
     //     for Si in streams, Cj in comps.
-    eq = m->add_constraint(prefix + sin->name + "_total_mass_def");
+    auto eq = m->add_constraint(prefix + sin->name + "_total_mass_def");
     g.push_back(eq);
     for (const auto& compID : sin->comps)
         J.push_back(m->add_J_NZ(eq, x_strm[sin].mass.at(compID)));
     J.push_back(m->add_J_NZ(eq, x_strm[sin].total_mass));
     for (const auto& sout : outlets) {
-        auto eq = m->add_constraint(prefix + sout->name + "_total_mass_def");
+        eq = m->add_constraint(prefix + sout->name + "_total_mass_def");
         g.push_back(eq);
         for (const auto& compID : sout->comps) {
             J.push_back(m->add_J_NZ(eq, x_strm[sout].mass.at(compID)));
@@ -223,7 +220,7 @@ void Separator::eval_jacobian() {
 
     // Splits of each component sum to 1, Sum(sep1.Si.split_Cj) - 1 == 0, for Si in outlet streams,
     //     Cj in inlet stream components. Cj included in Sum only if Cj is present in outlet stream Si.
-    for (int i = 0; const auto& compID : sin->comps)
+    for (const auto& compID : sin->comps)
         for (const auto& sout : outlets)
             if (sout->has_comp(compID))
                 *J[ic++] = 1.0;

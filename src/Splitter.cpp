@@ -1,5 +1,4 @@
 #include <cassert>
-#include <iostream>
 #include "Splitter.hpp"
 
 Splitter::Splitter(string_view       name_,
@@ -9,16 +8,15 @@ Splitter::Splitter(string_view       name_,
                         Block(name_, fs_, std::move(inlets_), std::move(outlets_))
 {
     const auto& sin = inlets[0];
-    auto m = fs->m;
+    const auto m = fs->m;
 
     for (const auto& sout : outlets)
         assert(sin->comps == sout->comps);
 
-    Constraint* eq;
     x_split.resize(outlets.size());
     
     // Total mass flow definition for inlet stream, \sum_{Cj in comps}(spl1.Sin.mass_Cj) - spl1.Sin.mass == 0.
-    eq = m->add_constraint(prefix + sin->name + "_total_mass_def");
+    auto eq = m->add_constraint(prefix + sin->name + "_total_mass_def");
     g.push_back(eq);
     for (const auto& compID : sin->comps)
         J.push_back(m->add_J_NZ(eq, x_strm[sin].mass.at(compID)));
