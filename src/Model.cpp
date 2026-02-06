@@ -39,7 +39,7 @@ Unit* UnitSet::add_unit(const string& unit_str,
 
 //---------------------------------------------------------
 
-Ndouble Variable::change_unit(Model*        m,
+Ndouble Quantity::change_unit(Model*        m,
                               const string& new_unit_str) {
 
     if (new_unit_str == unit->str) return std::nullopt;
@@ -95,12 +95,12 @@ Stream* Flowsheet::add_stream(const string&  name_,
 }
 
 char const* var_header = R"(
-|Index|              Name               Fix      Value          Lower          Upper      Units
+|Index|              Name              |Fix|     Value    |     Lower    |     Upper    |  Unit  |
 |-----|--------------------------------|---|--------------|--------------|--------------|--------|
 )";
 
 char const* con_header = R"(
-|Index|              Name                    Value
+|Index|              Name              |     Value    |
 |-----|--------------------------------|--------------|
 )";
 
@@ -117,6 +117,21 @@ char const* hess_header = R"(
 char const* conn_header = R"(
 |Index| Var1| Var2|            Variable 1          |            Variable 2          |    Value     |
 |-----|-----|-----|--------------------------------|--------------------------------|--------------|
+)";
+
+char const* price_header = R"(
+|              Name              |     Value    |  Unit  |
+|--------------------------------|--------------|--------|
+)";
+
+char const* obj_header = R"(
+|          Term          |            Variable            |          Price         |    Value     |  Unit  |
+|------------------------|--------------------------------|------------------------|--------------|--------|
+)";
+
+char const* obj_grad_header = R"(
+|Index|            Variable            |    Value     |
+|-----|--------------------------------|--------------|
 )";
 
 //---------------------------------------------------------
@@ -259,7 +274,56 @@ void Calc::show_hessian(ostream& os) const {
     os << count << " Hessian NZ" << (count > 1 ? "s" : "") << " shown\n";
 }
 
+//---------------------------------------------------------
 
+ObjTerm* Objective::add_objterm(string_view name_,
+                                Variable*   var_,
+                                Price*      price_,
+                                Unit*       unit_,
+                                double      scale_) {
+    auto objterm = make_unique<ObjTerm>(name_, var_, price_, unit_, scale_);
+    auto objterm_p = objterm.get();
+    terms[string(name_)] = std::move(objterm);
+    return objterm_p;
+}
+
+double Objective::eval() {
+    value = 0.0;
+    for (const auto& [name_, term] : terms) {
+        if (std::holds_alternative<unique_ptr<ObjTerm>>(term)) {
+            auto objterm = std::get<unique_ptr<ObjTerm>>(term).get();
+            value += convert_to_base(objterm->eval());
+        }
+        else
+            value += convert_to_base(std::get<Objective*>(term)->eval());
+    }
+    value = scale * convert_from_base(value);
+    return value;
+}
+
+void Objective::eval_grad_rec(vector<std::pair<Index, double>>& grad_top) {
+    for (const auto& [name_, term] : terms) {
+        if (std::holds_alternative<unique_ptr<ObjTerm>>(term)) {
+            auto objterm = std::get<unique_ptr<ObjTerm>>(term).get();
+            grad_top.push_back({objterm->var->ix, objterm->eval_grad()});
+        }
+        else
+            std::get<Objective*>(term)->eval_grad_rec(grad_top);
+    }
+}
+
+void Objective::eval_grad() {
+    grad.clear();
+    for (const auto& [name_, term] : terms) {
+        if (std::holds_alternative<unique_ptr<ObjTerm>>(term)) {
+            auto objterm = std::get<unique_ptr<ObjTerm>>(term).get();
+            grad.push_back({objterm->var->ix, objterm->eval_grad()});
+        }
+        else
+            std::get<Objective*>(term)->eval_grad_rec(grad);
+    }
+}
+    
 //---------------------------------------------------------
 
 Variable* Model::add_var(string_view name_, Unit* unit)
@@ -338,6 +402,20 @@ bool Model::add_bridge(Stream* sfrom, Stream* sto) {
     return true;
 }
 
+Price* Model::add_price(string_view name_, double value_, Unit* unit_) {
+    auto price = make_unique<Price>(name_, value_, unit_);
+    auto price_p = price.get();
+    prices[string(name_)] = std::move(price);
+    return price_p;
+}
+
+Objective* Model::add_objective(string_view name_, Unit* unit_, double scale_) {
+    auto obj = make_unique<Objective>(name_, unit_, scale_);
+    auto obj_p = obj.get();
+    objectives[string(name_)] = std::move(obj);
+    return obj_p;
+}
+
 void Model::show_variables(ostream& os) const {
     int count {0};
     os << var_header;
@@ -386,6 +464,45 @@ void Model::show_connections(ostream& os) const {
         count++;
     }
     os << count << " connection" << (count > 1 ? "s" : "") << " shown\n";
+}
+
+void Model::show_prices(ostream& os) const {
+    int count {0};
+    os << price_header;
+    for (const auto& [price_name, price] : prices) {
+        os << *price << '\n';
+        count++;
+    }
+    os << count << " price" << (count > 1 ? "s" : "") << " shown\n";
+}
+
+void Model::show_objective_rec(Objective* obj, ostream& os) const {
+    for (const auto& [name, term] : obj->terms) {
+        if (std::holds_alternative<unique_ptr<ObjTerm>>(term)) {
+            const auto& objterm = std::get<unique_ptr<ObjTerm>>(term);
+            os << *objterm << '\n';
+        }
+        else
+            show_objective_rec(std::get<Objective*>(term), os);
+    }
+    os << *obj << '\n';
+}
+
+void Model::show_objective(Objective* obj_, ostream& os) const {
+    if (obj_ == nullptr) obj_ = obj;
+    os << "Objective: " << obj_->name << '\n';
+    os << obj_header;
+    show_objective_rec(obj_, os);
+}
+
+void Model::show_obj_grad(ostream& os) const {
+    os << "Gradient of objective: " << obj->name << '\n';
+    os << obj_grad_header;
+    for (const auto& g : obj->grad) {
+        auto i   = std::get<0>(g);
+        auto val = std::get<1>(g);
+        os << format("|{}|{:32}|{}|\n", str(i), x_vec[i]->name, str(val));
+    }
 }
 
 void Model::show_summary(ostream& os) const {
@@ -477,7 +594,13 @@ bool Model::eval_f(
     bool          new_x,
     Number&       obj_value)
 {
-    obj_value = 1.0;
+    if (obj == nullptr)
+        obj_value = 1.0;
+    else {
+        for (Index i = 0; const auto& var : x_vec)
+            var->convert_and_set(x_in[i++]);
+        obj_value = eval_objective();
+    }
     return true;
 }
 
@@ -489,7 +612,15 @@ bool Model::eval_grad_f(
 {
     for (Index i = 0; i < n; i++)
         grad_f[i] = 0.0;
-
+    if (obj == nullptr) return true;
+    for (Index i = 0; const auto& var : x_vec)
+        var->convert_and_set(x_in[i++]);
+    eval_obj_grad();
+    for (const auto& g : obj->grad) {
+        auto i   = std::get<0>(g);
+        auto val = std::get<1>(g);
+        grad_f[i] += val;
+    }
     return true;
 }
 
@@ -606,24 +737,4 @@ string str(Ndouble nd) {
 
 string str(VariableSpec spec) {
     return spec == VariableSpec::Fixed ? " ==" : "   ";
-}
-
-ostream& operator<<(ostream& os, const Variable& var) {
-    return os << var.to_str();
-}
-
-ostream& operator<<(ostream& os, const Constraint& con) {
-    return os << con.to_str();
-}
-
-ostream& operator<<(ostream& os, const JacobianNZ& jnz) {
-    return os << jnz.to_str();
-}
-
-ostream& operator<<(ostream& os, const HessianNZ& hnz) {
-    return os << hnz.to_str();
-}
-
-ostream& operator<<(ostream& os, const Connection& conn) {
-    return os << conn.to_str();
 }

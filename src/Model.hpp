@@ -9,6 +9,7 @@
 #include <utility>
 #include <optional>
 #include <memory>
+#include <variant>
 #include "IpIpoptApplication.hpp"
 
 constexpr double NO_BOUND = 1.0e20;
@@ -31,6 +32,11 @@ using Ipopt::IpoptData;
 using Ipopt::IpoptCalculatedQuantities;
 using Ipopt::SolverReturn;
 using Ipopt::IpoptApplication;
+
+template<typename T>
+auto operator<<(ostream& os, const T& obj) -> decltype(obj.to_str(), os) {
+    return os << obj.to_str();
+}
 
 struct UnitKind;
 
@@ -107,22 +113,59 @@ string str(double d);
 string str(Ndouble nd);
 string str(VariableSpec spec);
 
-class Variable
+class Quantity {
+public:
+    string name  {};
+    double value {0.0};
+    Unit*  unit  {};
+
+    Quantity() = default;
+    Quantity(string_view name_,
+             Unit*       unit_) :
+        name {name_},
+        unit {unit_}
+    {}
+    Quantity(string_view name_,
+             double      value_,
+             Unit*       unit_) :
+        name  {name_},
+        value {value_},
+        unit  {unit_}
+    {}
+
+    virtual double convert_to_base() const
+        {return value * unit->ratio + unit->offset;}
+    virtual double convert_to_base(double value_) const
+        {return value_ * unit->ratio + unit->offset;}
+    virtual double convert_to_base(double value_, const Unit* u) const
+        {return value_ * u->ratio + u->offset;}
+    virtual double convert_from_base(double base_value) const
+        {return (base_value - unit->offset) / unit->ratio;}
+    virtual void   convert_and_set(double base_value)
+        {value = (base_value - unit->offset) / unit->ratio;}
+    virtual void   convert_and_set(double value_, const Unit* u)
+        {value = convert_from_base(convert_to_base(value_, u));}
+    virtual double convert(double value_, const Unit* u) const
+        {return (u == unit ? value_ : convert_from_base(convert_to_base(value_, u)));}
+    virtual Ndouble change_unit(Model* m, const string& new_unit_str);
+
+    virtual operator double() const
+        {return convert_to_base();}
+
+};
+
+class Variable : public Quantity
 {
 public:
     Index        ix    {};
-    string       name  {};
-    double       value {0.0};
     Ndouble      lower {};
     Ndouble      upper {};
-    Unit*        unit  {};
     VariableSpec spec  {VariableSpec::Free};
 
     Variable() = default;
     Variable(string_view name_,
              Unit*       unit_) :
-        name {name_},
-        unit {unit_}
+        Quantity {name_, unit_}
     {}
 
     void fix()
@@ -135,35 +178,11 @@ public:
     bool is_free() const
         {return (spec == VariableSpec::Free);}
 
-    double convert_to_base() const
-        {return value * unit->ratio + unit->offset;}
-    double convert_to_base(double value_) const
-        {return value_ * unit->ratio + unit->offset;}
-    double convert_to_base(double value_, const Unit* u) const
-        {return value_ * u->ratio + u->offset;}
-    double convert_from_base(double base_value) const
-        {return (base_value - unit->offset) / unit->ratio;}
-    void   convert_and_set(double base_value)
-        {value = (base_value - unit->offset) / unit->ratio;}
-    void   convert_and_set(double value_, const Unit* u)
-        {value = convert_from_base(convert_to_base(value_, u));}
-    double convert(double value_, const Unit* u) const
-        {return (u == unit ? value_ : convert_from_base(convert_to_base(value_, u)));}
-
-    Ndouble change_unit(Model* m, const string& new_unit_str);
-
     string to_str() const
         {return format("|{}|{:32}|{}|{}|{}|{}|{:8}|", str(ix), name, str(spec), str(value),
             str(lower), str(upper), unit->str);}
 
-    Variable& operator=(const double& val)
-        {value = val; return *this;}
-
-    operator double() const
-        {return convert_to_base();}
 };
-
-ostream& operator<<(ostream& os, const Variable& var);
 
 //---------------------------------------------------------
 
@@ -186,8 +205,6 @@ struct Constraint
 
 };
 
-ostream& operator<<(ostream& os, const Constraint& con);
-
 //---------------------------------------------------------
 
 struct JacobianNZ
@@ -209,8 +226,6 @@ struct JacobianNZ
 
     JacobianNZ& operator=(const double& val) {value = val; return *this;}
 };
-
-ostream& operator<<(ostream& os, const JacobianNZ& jnz);
 
 //---------------------------------------------------------
 
@@ -235,8 +250,6 @@ struct HessianNZ
 
     HessianNZ& operator=(const double& val) {value = val; return *this;}
 };
-
-ostream& operator<<(ostream& os, const HessianNZ& jnz);
 
 class Block;
 class Flowsheet;
@@ -383,8 +396,6 @@ struct Connection
 
 };
 
-ostream& operator<<(ostream& os, const Connection& conn);
-
 struct Connections
 {
     const string                   prefix   {"cnx."};
@@ -501,6 +512,92 @@ public:
 
 //---------------------------------------------------------
 
+class Price : public Quantity
+{
+public:
+    Price() = default;
+    Price(string_view name_,
+          double      value_,
+          Unit*       unit_) :
+        Quantity {name_, value_, unit_}
+    {}
+
+    string to_str() const
+        {return format("|{:32}|{}|{:8}|", name, str(value), unit->str);}
+
+};
+
+class ObjTerm : public Quantity
+{
+public:
+    Variable* var;
+    Price*    price;
+    double    scale {1.0};
+
+    ObjTerm() = default;
+    ObjTerm(string_view name_,
+            Variable*   var_,
+            Price*      price_,
+            Unit*       unit_,
+            double      scale_ = 1.0) :
+        Quantity {name_, unit_},
+        var  {var_},
+        price {price_},
+        scale {scale_}
+    {}
+
+    double eval() {
+        value = scale * convert_from_base(*var * *price);
+        return value;
+    }
+
+    double eval_grad() {
+        return scale * convert_from_base(*price);
+    }
+
+    string to_str() const
+        {return format("|{:24}|{:32}|{:24}|{}|{:8}|", name, var->name, price->name, str(value), unit->str);}
+
+};
+
+class Objective : public Quantity 
+{
+public:
+    double    scale {1.0};
+    unordered_map<string, std::variant<unique_ptr<ObjTerm>, Objective*>> terms {};
+    vector<std::pair<Index, double>> grad {};
+    
+    Objective() = default;
+    Objective(string_view name_,
+              Unit*       unit_,
+              double      scale_ = 1.0) :
+        Quantity {name_, unit_},
+        scale {scale_}
+    {}
+
+    Objective* add_objective(Objective* obj) {
+        terms[obj->name] = obj;
+        return obj;
+    }
+    
+    ObjTerm* add_objterm(string_view name_,
+                         Variable*   var_, 
+                         Price*      price_,
+                         Unit*       unit_,
+                         double      scale_ = 1.0);
+
+    double eval();
+    void eval_grad();
+
+    string to_str() const
+        {return format("|{:>24}|{:32}|{:24}|{}|{:8}|", name, "", "", str(value), unit->str);}
+private:
+    void eval_grad_rec(vector<std::pair<Index, double>>& grad_top);
+
+};
+
+//---------------------------------------------------------
+
 class Model : public TNLP
 {
 public:
@@ -516,6 +613,11 @@ public:
     vector<unique_ptr<HessianNZ>>      H_vec;
     std::map<std::pair<Index, Index>,
              vector<HessianNZ*>>       H;
+    unordered_map<string,
+        unique_ptr<Price>>             prices;
+    unordered_map<string,
+        unique_ptr<Objective>>         objectives;
+    Objective*                         obj {nullptr};
     bool                               printiterate {true};
 
     Model() = default;
@@ -539,17 +641,23 @@ public:
     Connection* add_connection(Variable* var1,
                                Variable* var2);
     bool        add_bridge(Stream* sfrom, Stream* sto);
-
+    Price*      add_price(string_view name_, double value_, Unit* unit_);
+    Objective*  add_objective(string_view name_, Unit* unit_, double scale_ = 1.0);
     void        initialize()       { index_fs->initialize(); };
     void        eval_constraints() { index_fs->eval_constraints(); cnx.eval_constraints(); };
     void        eval_jacobian()    { index_fs->eval_jacobian(); cnx.eval_jacobian(); };
     void        eval_hessian()     { index_fs->eval_hessian(); };
+    double      eval_objective() { return (obj == nullptr ? 1.0 : obj->eval()); }; 
+    void        eval_obj_grad() { if (obj) obj->eval_grad(); }; 
     void        show_variables(ostream& os = cout) const;
     void        show_constraints(ostream& os = cout) const;
     void        show_jacobian(ostream& os = cout) const;
     void        show_hessian(ostream& os = cout) const;
     void        show_connections(ostream& os = cout) const;
     void        show_summary(ostream& os = cout) const;
+    void        show_prices(ostream& os = cout) const;
+    void        show_objective(Objective* obj_ = nullptr, ostream& os = cout) const;
+    void        show_obj_grad(ostream& os = cout) const;
     Variable*   var(const string& name_) const {
         return x_map.contains(name_) ? x_map.at(name_) : nullptr;
     };
@@ -634,5 +742,8 @@ public:
         Number                     obj_value,
         const IpoptData*           ip_data,
         IpoptCalculatedQuantities* ip_cq) override;
+
+private:
+    void show_objective_rec(Objective* obj, ostream& os) const;
 
 };
