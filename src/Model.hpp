@@ -34,7 +34,12 @@ using Ipopt::SolverReturn;
 using Ipopt::IpoptApplication;
 
 template<typename T>
-auto operator<<(ostream& os, const T& obj) -> decltype(obj.to_str(), os) {
+concept implements_to_str = requires(const T& obj) {
+    obj.to_str();
+};
+
+template<implements_to_str T>
+ostream& operator<<(ostream& os, const T& obj) {
     return os << obj.to_str();
 }
 
@@ -42,16 +47,16 @@ struct UnitKind;
 
 struct Unit
 {
-    string str     {};
-    UnitKind* kind {};
-    double ratio   {1.0};
-    double offset  {0.0};
+    string    str    {};
+    UnitKind* kind   {};
+    double    ratio  {1.0};
+    double    offset {0.0};
 
     Unit() = default;
     Unit(string_view str_,
          UnitKind*   kind_,
-         double      ratio_    = 1.0,
-         double      offset_   = 0.0) :
+         double      ratio_  = 1.0,
+         double      offset_ = 0.0) :
         str    {str_},
         kind   {kind_},
         ratio  {ratio_},
@@ -115,6 +120,8 @@ string str(VariableSpec spec);
 
 class Quantity {
 public:
+    virtual ~Quantity() = default;
+
     string name  {};
     double value {0.0};
     Unit*  unit  {};
@@ -168,15 +175,11 @@ public:
         Quantity {name_, unit_}
     {}
 
-    void fix()
-        {spec = VariableSpec::Fixed;}
-    void free()
-        {spec = VariableSpec::Free;}
+    void fix()  {spec = VariableSpec::Fixed;}
+    void free() {spec = VariableSpec::Free;}
 
-    bool is_fixed() const
-        {return (spec == VariableSpec::Fixed);}
-    bool is_free() const
-        {return (spec == VariableSpec::Free);}
+    bool is_fixed() const {return (spec == VariableSpec::Fixed);}
+    bool is_free()  const {return (spec == VariableSpec::Free);}
 
     string to_str() const
         {return format("|{}|{:32}|{}|{}|{}|{}|{:8}|", str(ix), name, str(spec), str(value),
@@ -209,10 +212,10 @@ struct Constraint
 
 struct JacobianNZ
 {
-    Index        ix;
-    Constraint*  con;
-    Variable*    var;
-    double value {};
+    Index        ix    {};
+    Constraint*  con   {};
+    Variable*    var   {};
+    double       value {};
 
     JacobianNZ(Constraint*     con_ = nullptr,
                Variable* const var_ = nullptr) :
@@ -231,11 +234,11 @@ struct JacobianNZ
 
 struct HessianNZ
 {
-    Index        ix;
-    Constraint*  con;
-    Variable*    var1;
-    Variable*    var2;
-    double value {};
+    Index        ix    {};
+    Constraint*  con   {};
+    Variable*    var1  {};
+    Variable*    var2  {};
+    double       value {};
 
     HessianNZ(Constraint* con_  = nullptr,
               Variable*   var1_ = nullptr,
@@ -279,9 +282,8 @@ struct Stream
     {}
 
     Connection* connect();
-    bool has_comp(string_view compID) const
-    {
-        return std::ranges::find(comps, compID) != comps.end();
+    bool has_comp(string_view c) const {
+        return std::ranges::find(comps, c) != comps.end();
     }
 };
 
@@ -321,11 +323,11 @@ public:
     virtual void eval_jacobian()    = 0;
     virtual void eval_hessian()     = 0;
 
-    void show_variables(ostream& os = cout) const;
+    void show_variables(ostream& os = cout)   const;
     void show_constraints(ostream& os = cout) const;
-    void show_jacobian(ostream& os = cout) const;
-    void show_hessian(ostream& os = cout) const;
-    void show_summary(ostream& os = cout) const {}
+    void show_jacobian(ostream& os = cout)    const;
+    void show_hessian(ostream& os = cout)     const;
+    void show_summary(ostream& os = cout)     const {}
 
 private:
     void make_stream_variables(Stream* strm);
@@ -340,17 +342,17 @@ void call_lua_function(const string& func_name);
 class Calc
 {
 public:
-    string                             name    {};
-    Flowsheet*                         fs      {};
-    string                             prefix  {};
-    vector<Variable*>                  x       {};
-    vector<Constraint*>                g       {};
-    vector<JacobianNZ*>                J       {};
-    vector<HessianNZ*>                 H       {};
+    string              name   {};
+    Flowsheet*          fs     {};
+    string              prefix {};
+    vector<Variable*>   x      {};
+    vector<Constraint*> g      {};
+    vector<JacobianNZ*> J      {};
+    vector<HessianNZ*>  H      {};
 
     Calc() = default;
-    Calc(string_view       name_,
-         Flowsheet*        fs_);
+    Calc(string_view name_,
+         Flowsheet*  fs_);
 
     void initialize() const {
         string func_name = name + "_init";
@@ -370,11 +372,11 @@ public:
         call_lua_function(func_name);
     }
 
-    void show_variables(ostream& os = cout) const;
+    void show_variables(ostream& os = cout)   const;
     void show_constraints(ostream& os = cout) const;
-    void show_jacobian(ostream& os = cout) const;
-    void show_hessian(ostream& os = cout) const;
-    void show_summary(ostream& os = cout) const {}
+    void show_jacobian(ostream& os = cout)    const;
+    void show_hessian(ostream& os = cout)     const;
+    void show_summary(ostream& os = cout)     const {}
 
 };
 
@@ -388,8 +390,7 @@ struct Connection
     JacobianNZ* jnz1 {};
     JacobianNZ* jnz2 {};
 
-    string to_str() const
-    {
+    string to_str() const {
         return format("|{}|{}|{}|{:32}|{:32}|{}|", str(eq->ix), str(var1->ix),
             str(var2->ix), var1->name, var2->name, str(eq->value));
     }
@@ -401,12 +402,12 @@ struct Connections
     const string                   prefix   {"cnx."};
     vector<unique_ptr<Connection>> conn_vec {};
 
-    void eval_constraints() {
+    void eval_constraints() const {
         for (const auto& conn_p : conn_vec)
             *conn_p->eq = *conn_p->var1 - *conn_p->var2;
     }
 
-    void eval_jacobian() {
+    void eval_jacobian() const {
         for (const auto& conn_p : conn_vec) {
             *conn_p->jnz1 = 1.0;
             *conn_p->jnz2 = -1.0;
@@ -420,17 +421,18 @@ struct Connections
 class Flowsheet
 {
 public:
-    string                                    name;
-    Model*                                    m;
-    string                                    path;
-    string                                    prefix;
-    Flowsheet*                                parent;
-    vector<unique_ptr<Flowsheet>>             children;
-    vector<unique_ptr<Block>>                 blocks;
-    unordered_map<string, Block*>             blocks_map;
-    vector<unique_ptr<Calc>>                  calcs;
-    unordered_map<string, Calc*>              calcs_map;
-    unordered_map<string, unique_ptr<Stream>> streams;
+    string                        name;
+    Model*                        m;
+    string                        path;
+    string                        prefix;
+    Flowsheet*                    parent;
+    vector<unique_ptr<Flowsheet>> children;
+    vector<unique_ptr<Block>>     blocks;
+    unordered_map<string, Block*> blocks_map;
+    vector<unique_ptr<Calc>>      calcs;
+    unordered_map<string, Calc*>  calcs_map;
+    unordered_map<string,
+        unique_ptr<Stream>>       streams;
 
     Flowsheet(string_view name_,
               Model*      m_,
@@ -459,7 +461,11 @@ public:
                  vector<Stream*>&& outlet_strms,
                  blk_params_T&     ...blk_params) noexcept {
              
-        auto blk = make_unique<T>(name_, this, std::move(inlet_strms), std::move(outlet_strms), blk_params...);
+        auto blk = make_unique<T>(name_,
+                                  this,
+                                  std::move(inlet_strms),
+                                  std::move(outlet_strms),
+                                  blk_params...);
         auto blk_p = blk.get();
         blocks_map[blk->name] = blk_p;
         for (const auto& sin : blk->inlets)   sin->to    = blk_p;
@@ -501,10 +507,10 @@ private:
     }
 
 public:
-    void initialize()       { eval([](const auto& ptr) { ptr->initialize(); }); }
+    void initialize()       { eval([](const auto& ptr) { ptr->initialize();       }); }
     void eval_constraints() { eval([](const auto& ptr) { ptr->eval_constraints(); }); }
-    void eval_jacobian()    { eval([](const auto& ptr) { ptr->eval_jacobian(); }); }
-    void eval_hessian()     { eval([](const auto& ptr) { ptr->eval_hessian(); }); }
+    void eval_jacobian()    { eval([](const auto& ptr) { ptr->eval_jacobian();    }); }
+    void eval_hessian()     { eval([](const auto& ptr) { ptr->eval_hessian();     }); }
 
     void show_summary(ostream& os = cout) const {}
 
@@ -522,8 +528,9 @@ public:
         Quantity {name_, value_, unit_}
     {}
 
-    string to_str() const
-        {return format("|{:32}|{}|{:8}|", name, str(value), unit->str);}
+    string to_str() const {
+        return format("|{:32}|{}|{:8}|", name, str(value), unit->str);
+    }
 
 };
 
@@ -541,9 +548,9 @@ public:
             Unit*       unit_,
             double      scale_ = 1.0) :
         Quantity {name_, unit_},
-        var  {var_},
-        price {price_},
-        scale {scale_}
+        var      {var_},
+        price    {price_},
+        scale    {scale_}
     {}
 
     double eval() {
@@ -551,28 +558,32 @@ public:
         return value;
     }
 
-    double eval_grad() {
+    double eval_grad() const {
         return scale * convert_from_base(*price);
     }
 
-    string to_str() const
-        {return format("|{:24}|{:32}|{:24}|{}|{:8}|", name, var->name, price->name, str(value), unit->str);}
+    string to_str() const {
+        return format("|{:24}|{:32}|{:24}|{}|{:8}|",
+            name, var->name, price->name, str(value), unit->str);
+    }
 
 };
 
 class Objective : public Quantity 
 {
 public:
-    double    scale {1.0};
-    unordered_map<string, std::variant<unique_ptr<ObjTerm>, Objective*>> terms {};
-    vector<std::pair<Index, double>> grad {};
+    double                                          scale {1.0};
+    unordered_map<string,
+                  std::variant<unique_ptr<ObjTerm>,
+                               Objective*>>         terms {};
+    vector<std::pair<Index, double>>                grad  {};
     
     Objective() = default;
     Objective(string_view name_,
               Unit*       unit_,
               double      scale_ = 1.0) :
         Quantity {name_, unit_},
-        scale {scale_}
+        scale    {scale_}
     {}
 
     Objective* add_objective(Objective* obj) {
@@ -587,10 +598,13 @@ public:
                          double      scale_ = 1.0);
 
     double eval();
-    void eval_grad();
+    void   eval_grad();
 
-    string to_str() const
-        {return format("|{:>24}|{:32}|{:24}|{}|{:8}|", name, "", "", str(value), unit->str);}
+    string to_str() const {
+        return format("|{:>24}|{:32}|{:24}|{}|{:8}|",
+            name, "", "", str(value), unit->str);
+    }
+
 private:
     void eval_grad_rec(vector<std::pair<Index, double>>& grad_top);
 
@@ -640,24 +654,35 @@ public:
                          Variable*   var2);
     Connection* add_connection(Variable* var1,
                                Variable* var2);
-    bool        add_bridge(Stream* sfrom, Stream* sto);
-    Price*      add_price(string_view name_, double value_, Unit* unit_);
-    Objective*  add_objective(string_view name_, Unit* unit_, double scale_ = 1.0);
-    void        initialize()       { index_fs->initialize(); };
-    void        eval_constraints() { index_fs->eval_constraints(); cnx.eval_constraints(); };
-    void        eval_jacobian()    { index_fs->eval_jacobian(); cnx.eval_jacobian(); };
-    void        eval_hessian()     { index_fs->eval_hessian(); };
-    double      eval_objective() { return (obj == nullptr ? 1.0 : obj->eval()); }; 
-    void        eval_obj_grad() { if (obj) obj->eval_grad(); }; 
-    void        show_variables(ostream& os = cout) const;
+    bool        add_bridge(Stream* sfrom,
+                           Stream* sto);
+    Price*      add_price(string_view name_,
+                          double      value_,
+                          Unit*       unit_);
+    Objective*  add_objective(string_view name_,
+                              Unit*       unit_,
+                              double      scale_ = 1.0);
+    void        initialize()       { index_fs->initialize();      };
+    void        eval_constraints() { index_fs->eval_constraints();
+                                     cnx.eval_constraints();      };
+    void        eval_jacobian()    { index_fs->eval_jacobian();
+                                     cnx.eval_jacobian();         };
+    void        eval_hessian()     { index_fs->eval_hessian();    };
+    double      eval_objective()   { return (obj == nullptr ?
+                                         1.0 : obj->eval());      }; 
+    void        eval_obj_grad()    { if (obj) obj->eval_grad();   }; 
+    
+    void        show_variables(ostream& os = cout)   const;
     void        show_constraints(ostream& os = cout) const;
-    void        show_jacobian(ostream& os = cout) const;
-    void        show_hessian(ostream& os = cout) const;
+    void        show_jacobian(ostream& os = cout)    const;
+    void        show_hessian(ostream& os = cout)     const;
     void        show_connections(ostream& os = cout) const;
-    void        show_summary(ostream& os = cout) const;
-    void        show_prices(ostream& os = cout) const;
-    void        show_objective(Objective* obj_ = nullptr, ostream& os = cout) const;
-    void        show_obj_grad(ostream& os = cout) const;
+    void        show_summary(ostream& os = cout)     const;
+    void        show_prices(ostream& os = cout)      const;
+    void        show_objective(Objective* obj_ = nullptr,
+                               ostream&   os = cout) const;
+    void        show_obj_grad(ostream& os = cout)    const;
+
     Variable*   var(const string& name_) const {
         return x_map.contains(name_) ? x_map.at(name_) : nullptr;
     };
@@ -744,6 +769,6 @@ public:
         IpoptCalculatedQuantities* ip_cq) override;
 
 private:
-    void show_objective_rec(Objective* obj, ostream& os) const;
+    void show_objective_rec(Objective* obj_, ostream& os) const;
 
 };

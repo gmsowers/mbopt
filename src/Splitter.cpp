@@ -5,7 +5,10 @@ Splitter::Splitter(string_view       name_,
                    Flowsheet*        fs_,
                    vector<Stream*>&& inlets_,
                    vector<Stream*>&& outlets_) : 
-                        Block(name_, fs_, std::move(inlets_), std::move(outlets_))
+                Block(name_,
+                      fs_,
+                      std::move(inlets_),
+                      std::move(outlets_))
 {
     const auto& sin = inlets[0];
     const auto m = fs->m;
@@ -18,28 +21,28 @@ Splitter::Splitter(string_view       name_,
     // Total mass flow definition for inlet stream, \sum_{Cj in comps}(spl1.Sin.mass_Cj) - spl1.Sin.mass == 0.
     auto eq = m->add_constraint(prefix + sin->name + "_total_mass_def");
     g.push_back(eq);
-    for (const auto& compID : sin->comps)
-        J.push_back(m->add_J_NZ(eq, x_strm[sin].mass.at(compID)));
+    for (const auto& c : sin->comps)
+        J.push_back(m->add_J_NZ(eq, x_strm[sin].mass.at(c)));
     J.push_back(m->add_J_NZ(eq, x_strm[sin].total_mass));
 
     // Mass fraction definitions, (spl1.Si.mass * spl1.Si.massfrac_Cj) - spl1.Si.mass_Cj == 0
     //    for Si in streams, Cj in comps.
-    for (const auto& compID : sin->comps) {
-        eq = m->add_constraint(prefix + sin->name + "." + compID + "_massfrac_def");
+    for (const auto& c : sin->comps) {
+        eq = m->add_constraint(prefix + sin->name + "." + c + "_massfrac_def");
         g.push_back(eq);
         J.push_back(m->add_J_NZ(eq, x_strm[sin].total_mass));
-        J.push_back(m->add_J_NZ(eq, x_strm[sin].massfrac.at(compID)));
-        J.push_back(m->add_J_NZ(eq, x_strm[sin].mass.at(compID)));
-        H.push_back(m->add_H_NZ(eq, x_strm[sin].total_mass, x_strm[sin].massfrac.at(compID)));
+        J.push_back(m->add_J_NZ(eq, x_strm[sin].massfrac.at(c)));
+        J.push_back(m->add_J_NZ(eq, x_strm[sin].mass.at(c)));
+        H.push_back(m->add_H_NZ(eq, x_strm[sin].total_mass, x_strm[sin].massfrac.at(c)));
     }
     for (const auto& sout : outlets)
-        for (const auto& compID : sout->comps) {
-            eq = m->add_constraint(prefix + sout->name + "." + compID + "_massfrac_def");
+        for (const auto& c : sout->comps) {
+            eq = m->add_constraint(prefix + sout->name + "." + c + "_massfrac_def");
             g.push_back(eq);
             J.push_back(m->add_J_NZ(eq, x_strm[sout].total_mass));
-            J.push_back(m->add_J_NZ(eq, x_strm[sout].massfrac.at(compID)));
-            J.push_back(m->add_J_NZ(eq, x_strm[sout].mass.at(compID)));
-            H.push_back(m->add_H_NZ(eq, x_strm[sout].total_mass, x_strm[sout].massfrac.at(compID)));
+            J.push_back(m->add_J_NZ(eq, x_strm[sout].massfrac.at(c)));
+            J.push_back(m->add_J_NZ(eq, x_strm[sout].mass.at(c)));
+            H.push_back(m->add_H_NZ(eq, x_strm[sout].total_mass, x_strm[sout].massfrac.at(c)));
         }
 
     // Split fraction definitions, (spl1.Sin.mass * spl1.Si.splitfrac) - spl1.Si.mass == 0
@@ -59,16 +62,16 @@ Splitter::Splitter(string_view       name_,
     // Split fractions sum to 1, Sum(spl1.Si.splitfrac) - 1 ==0, for Si in outlet streams.
     eq = m->add_constraint(prefix + "splitfrac_sum");
     g.push_back(eq);
-    for (int i = 0; i < x_split.size(); i++)
-        J.push_back(m->add_J_NZ(eq, x_split[i]));
+    for (const auto& split : x_split)
+        J.push_back(m->add_J_NZ(eq, split));
 
     // Composition copy, spl1.Sin.massfrac_Cj - spl1.Si.massfrac_Cj == 0, for Si in outlet streams, Cj in Sin.comps.
     for (const auto& sout : outlets)
-        for (const auto& compID : sout->comps) {
-            eq = m->add_constraint(prefix + sout->name + "." + compID + "_massfrac_copy");
+        for (const auto& c : sout->comps) {
+            eq = m->add_constraint(prefix + sout->name + "." + c + "_massfrac_copy");
             g.push_back(eq);
-            J.push_back(m->add_J_NZ(eq, x_strm[sin].massfrac.at(compID)));
-            J.push_back(m->add_J_NZ(eq, x_strm[sout].massfrac.at(compID)));
+            J.push_back(m->add_J_NZ(eq, x_strm[sin].massfrac.at(c)));
+            J.push_back(m->add_J_NZ(eq, x_strm[sout].massfrac.at(c)));
         }
 
     // Fix all the splitfracs except the last one.
@@ -91,7 +94,7 @@ void Splitter::initialize() {
         }
     auto n_free = x_split.size() - n_fixed;
     if (n_free > 0) {
-        double free_frac = sum_fixed / n_free;
+        double free_frac = sum_fixed / static_cast<double>(n_free);
         for (const auto& frac : x_split)
             if (frac->is_free())
                 frac->convert_and_set(free_frac);
@@ -99,8 +102,8 @@ void Splitter::initialize() {
     
     // Calculate total mass flow rate of inlet stream.
     double base_val {0.0};
-    for (const auto& compID : sin->comps)
-        base_val += *x_strm[sin].mass[compID];
+    for (const auto& c : sin->comps)
+        base_val += *x_strm[sin].mass[c];
     x_strm[sin].total_mass->convert_and_set(base_val);
 
     // Calculate outlet stream total mass flow rates.
@@ -108,15 +111,15 @@ void Splitter::initialize() {
         x_strm[sout].total_mass->convert_and_set(*x_strm[sin].total_mass * *x_split[i++]);
 
     // Calculate mass fractions in inlet stream.
-    for (const auto& compID : sin->comps)
-        x_strm[sin].massfrac[compID]->convert_and_set(*x_strm[sin].mass[compID] / *x_strm[sin].total_mass);
+    for (const auto& c : sin->comps)
+        x_strm[sin].massfrac[c]->convert_and_set(*x_strm[sin].mass[c] / *x_strm[sin].total_mass);
 
     // Set mass fractions of outlet streams, and calculate outlet stream component mass flow rates.
     for (const auto& sout : outlets)
-        for (const auto& compID : sout->comps) {
-            auto mf = *x_strm[sin].massfrac[compID];
-            x_strm[sout].massfrac[compID]->convert_and_set(mf);
-            x_strm[sout].mass[compID]->convert_and_set(mf * *x_strm[sout].total_mass);
+        for (const auto& c : sout->comps) {
+            auto mf = *x_strm[sin].massfrac[c];
+            x_strm[sout].massfrac[c]->convert_and_set(mf);
+            x_strm[sout].mass[c]->convert_and_set(mf * *x_strm[sout].total_mass);
         }
 
 }
@@ -130,17 +133,17 @@ void Splitter::eval_constraints()
 
     // Total mass flow definition for inlet stream, \sum_{Cj in comps}(spl1.Sin.mass_Cj) - spl1.Sin.mass == 0.
     *g[ic] = 0.0;
-    for (const auto& compID : sin->comps)
-        *g[ic] += *x_strm[sin].mass[compID];
+    for (const auto& c : sin->comps)
+        *g[ic] += *x_strm[sin].mass[c];
     *g[ic++] -= *x_strm[sin].total_mass;
 
     // Mass fraction definitions, (spl1.Si.mass * spl1.Si.massfrac_Cj) - spl1.Si.mass_Cj == 0
     //    for Si in streams, Cj in comps.
-    for (const auto& compID : sin->comps)
-        *g[ic++] = *x_strm[sin].total_mass * *x_strm[sin].massfrac[compID] - *x_strm[sin].mass[compID];
+    for (const auto& c : sin->comps)
+        *g[ic++] = *x_strm[sin].total_mass * *x_strm[sin].massfrac[c] - *x_strm[sin].mass[c];
     for (const auto& sout : outlets)
-        for (const auto& compID : sout->comps)
-            *g[ic++] = *x_strm[sout].total_mass * *x_strm[sout].massfrac[compID] - *x_strm[sout].mass[compID];
+        for (const auto& c : sout->comps)
+            *g[ic++] = *x_strm[sout].total_mass * *x_strm[sout].massfrac[c] - *x_strm[sout].mass[c];
 
     // Split fraction definitions, (spl1.Sin.mass * spl1.Si.splitfrac) - spl1.Si.mass == 0
     //    for Si in outlet streams.
@@ -149,14 +152,14 @@ void Splitter::eval_constraints()
 
     // Split fractions sum to 1, Sum(spl1.Si.splitfrac) - 1 ==0, for Si in outlet streams.
     *g[ic] = 0.0;
-    for (int i = 0; i < x_split.size(); i++)
-        *g[ic] += *x_split[i];
+    for (const auto& split : x_split)
+        *g[ic] += *split;
     *g[ic++] -= 1.0;
 
     // Composition copy, spl1.Sin.massfrac_Cj - spl1.Si.massfrac_Cj == 0, for Si in outlet streams, Cj in Sin.comps.
     for (const auto& sout : outlets)
-        for (const auto& compID : sout->comps)
-            *g[ic++] = *x_strm[sin].massfrac[compID] - *x_strm[sout].massfrac[compID];
+        for (const auto& c : sout->comps)
+            *g[ic++] = *x_strm[sin].massfrac[c] - *x_strm[sout].massfrac[c];
         
 }
 
@@ -167,28 +170,28 @@ void Splitter::eval_jacobian() {
     auto ic = 0;
 
     // Total mass flow definition for inlet stream, \sum_{Cj in comps}(spl1.Sin.mass_Cj) - spl1.Sin.mass == 0.
-    for (const auto& compID : sin->comps)
+    for (size_t i = 0; i < sin->comps.size(); ++i)
         *J[ic++] = 1.0;
     *J[ic++] = -1.0;
 
     // Mass fraction definitions, (spl1.Si.mass * spl1.Si.massfrac_Cj) - spl1.Si.mass_Cj == 0
     //    for Si in streams, Cj in comps.
-    for (const auto& compID : sin->comps) {
-        *J[ic++] = *x_strm[sin].massfrac.at(compID);
+    for (const auto& c : sin->comps) {
+        *J[ic++] = *x_strm[sin].massfrac.at(c);
         *J[ic++] = *x_strm[sin].total_mass;
         *J[ic++] = -1.0;
     }
     for (const auto& sout : outlets)
-        for (const auto& compID : sout->comps) {
-            *J[ic++] = *x_strm[sout].massfrac.at(compID);
+        for (const auto& c : sout->comps) {
+            *J[ic++] = *x_strm[sout].massfrac.at(c);
             *J[ic++] = *x_strm[sout].total_mass;
             *J[ic++] = -1.0;
         }
 
     // Split fraction definitions, (spl1.Sin.mass * spl1.Si.splitfrac) - spl1.Si.mass == 0
     //    for Si in outlet streams.
-    for (int i = 0; const auto& sout : outlets) {
-        *J[ic++] = *x_split[i++];
+    for (int i = 0; i < outlets.size(); i++) {
+        *J[ic++] = *x_split[i];
         *J[ic++] = *x_strm[sin].total_mass;
         *J[ic++] = -1.0;
     }
@@ -199,7 +202,7 @@ void Splitter::eval_jacobian() {
 
     // Composition copy, spl1.Sin.massfrac_Cj - spl1.Si.massfrac_Cj == 0, for Si in outlet streams, Cj in Sin.comps.
     for (const auto& sout : outlets)
-        for (const auto& compID : sout->comps) {
+        for (size_t i = 0; i < sout->comps.size(); ++i) {
             *J[ic++] = 1.0;
             *J[ic++] = -1.0;
         }
@@ -223,7 +226,6 @@ void Splitter::eval_hessian() {
     // Split fraction definitions, (spl1.Sin.mass * spl1.Si.splitfrac) - spl1.Si.mass == 0
     //    for Si in outlet streams.
     for (int i = 0; i < outlets.size(); i++)
-        *H[ic++] = 1.0;
-    
+        *H[ic++] = 1.0;  
 
 }

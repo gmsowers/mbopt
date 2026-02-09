@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cassert>
 #include "Model.hpp"
+#include <ranges>
 
 vector<string> operator+(const vector<string>& c1, const vector<string>& c2)
 {
@@ -152,8 +153,8 @@ Block::Block(string_view       name_,
 
 void Block::set_inlet_stream_specs() {
     for (const auto& sin : inlets)
-        for (const auto& compID : sin->comps)
-            x_strm[sin].mass[compID]->fix();
+        for (const auto& c : sin->comps)
+            x_strm[sin].mass[c]->fix();
 }
 
 void Block::make_stream_variables(Stream* strm)
@@ -197,7 +198,7 @@ void Block::show_variables(ostream& os) const {
 void Block::show_constraints(ostream& os) const {
     int count {0};
     os << con_header;
-    for (const auto& con : g) {
+    for (const auto con : g) {
         os << *con << '\n';
         count++;
     }
@@ -207,7 +208,7 @@ void Block::show_constraints(ostream& os) const {
 void Block::show_jacobian(ostream& os) const {
     int count {0};
     os << jac_header;
-    for (const auto& jnz : J) {
+    for (const auto jnz : J) {
         os << *jnz << '\n';
         count++;
     }
@@ -217,7 +218,7 @@ void Block::show_jacobian(ostream& os) const {
 void Block::show_hessian(ostream& os) const {
     int count {0};
     os << hess_header;
-    for (const auto& hnz : H) {
+    for (const auto hnz : H) {
         os << *hnz << '\n';
         count++;
     }
@@ -289,23 +290,25 @@ ObjTerm* Objective::add_objterm(string_view name_,
 
 double Objective::eval() {
     value = 0.0;
-    for (const auto& [name_, term] : terms) {
+    for (const auto& term : std::views::values(terms)) {
         if (std::holds_alternative<unique_ptr<ObjTerm>>(term)) {
             auto objterm = std::get<unique_ptr<ObjTerm>>(term).get();
-            value += convert_to_base(objterm->eval());
+            value += convert_to_base(objterm->eval(), objterm->unit);
         }
-        else
-            value += convert_to_base(std::get<Objective*>(term)->eval());
+        else {
+            auto obj = std::get<Objective*>(term);
+            value += convert_to_base(obj->eval(), obj->unit);
+        }
     }
     value = scale * convert_from_base(value);
     return value;
 }
 
 void Objective::eval_grad_rec(vector<std::pair<Index, double>>& grad_top) {
-    for (const auto& [name_, term] : terms) {
+    for (const auto& term : std::views::values(terms)) {
         if (std::holds_alternative<unique_ptr<ObjTerm>>(term)) {
             auto objterm = std::get<unique_ptr<ObjTerm>>(term).get();
-            grad_top.push_back({objterm->var->ix, objterm->eval_grad()});
+            grad_top.push_back({objterm->var->ix, scale * convert_to_base(objterm->eval_grad(), objterm->unit)});
         }
         else
             std::get<Objective*>(term)->eval_grad_rec(grad_top);
@@ -314,14 +317,7 @@ void Objective::eval_grad_rec(vector<std::pair<Index, double>>& grad_top) {
 
 void Objective::eval_grad() {
     grad.clear();
-    for (const auto& [name_, term] : terms) {
-        if (std::holds_alternative<unique_ptr<ObjTerm>>(term)) {
-            auto objterm = std::get<unique_ptr<ObjTerm>>(term).get();
-            grad.push_back({objterm->var->ix, objterm->eval_grad()});
-        }
-        else
-            std::get<Objective*>(term)->eval_grad_rec(grad);
-    }
+    eval_grad_rec(grad);
 }
     
 //---------------------------------------------------------
@@ -410,9 +406,9 @@ Price* Model::add_price(string_view name_, double value_, Unit* unit_) {
 }
 
 Objective* Model::add_objective(string_view name_, Unit* unit_, double scale_) {
-    auto obj = make_unique<Objective>(name_, unit_, scale_);
-    auto obj_p = obj.get();
-    objectives[string(name_)] = std::move(obj);
+    auto obj_ = make_unique<Objective>(name_, unit_, scale_);
+    auto obj_p = obj_.get();
+    objectives[string(name_)] = std::move(obj_);
     return obj_p;
 }
 
@@ -469,15 +465,15 @@ void Model::show_connections(ostream& os) const {
 void Model::show_prices(ostream& os) const {
     int count {0};
     os << price_header;
-    for (const auto& [price_name, price] : prices) {
+    for (const auto& price : std::views::values(prices)) {
         os << *price << '\n';
         count++;
     }
     os << count << " price" << (count > 1 ? "s" : "") << " shown\n";
 }
 
-void Model::show_objective_rec(Objective* obj, ostream& os) const {
-    for (const auto& [name, term] : obj->terms) {
+void Model::show_objective_rec(Objective* obj_, ostream& os) const {
+    for (const auto& term : std::views::values(obj_->terms)) {
         if (std::holds_alternative<unique_ptr<ObjTerm>>(term)) {
             const auto& objterm = std::get<unique_ptr<ObjTerm>>(term);
             os << *objterm << '\n';
@@ -485,7 +481,7 @@ void Model::show_objective_rec(Objective* obj, ostream& os) const {
         else
             show_objective_rec(std::get<Objective*>(term), os);
     }
-    os << *obj << '\n';
+    os << *obj_ << '\n';
 }
 
 void Model::show_objective(Objective* obj_, ostream& os) const {
@@ -617,9 +613,8 @@ bool Model::eval_grad_f(
         var->convert_and_set(x_in[i++]);
     eval_obj_grad();
     for (const auto& g : obj->grad) {
-        auto i   = std::get<0>(g);
-        auto val = std::get<1>(g);
-        grad_f[i] += val;
+        auto [i, val] = g;
+        grad_f[i] += obj->convert_from_base(val);
     }
     return true;
 }
@@ -682,8 +677,8 @@ bool Model::eval_h(
     Number*       values)
 {
     if (values == nullptr)
-        for (Index i = 0; const auto& val : H) {
-            auto [row, col] = val.first;
+        for (Index i = 0; const auto& key : std::views::keys(H)) {
+            auto [row, col] = key;
             iRow[i] = row;
             jCol[i] = col;
             i++;
@@ -692,7 +687,7 @@ bool Model::eval_h(
         for (Index i = 0; const auto& var : x_vec)
             var->convert_and_set(x_in[i++]);
         eval_hessian();
-        for (Index i = 0; const auto& [idx, elems] : H) {
+        for (Index i = 0; const auto& elems : std::views::values(H)) {
             values[i] = 0.0;
             for (const auto& elem : elems) {
                 values[i] += lambda[elem->con->ix] * elem->value;

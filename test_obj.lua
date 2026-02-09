@@ -33,7 +33,8 @@ units = {
         { "$/lb", 2.20462 }
     },
     flowval = {
-        { "$/hr", 1.0 }
+        { "$/hr",  1.0  },
+        { "$/min", 0.5 }
     }
 }
 
@@ -70,45 +71,49 @@ print("Test 4 passed")
 n_test = n_test + 1
 
 -- test 5: Create some prices with that unit.
-N1_price, N2_price, OUT_price = Prices( {"Prices.N1_kg", 0.20, u},
+N1_price, N2_price, OUT_price = Prices( {"Prices.N1_kg", 0.50, u},
                                         {"Prices.N2_kg", 0.10, u},
                                         {"Prices.OUT_kg", 0.3, u})
 if N1_price == nil or N2_price == nil or OUT_price == nil then goto FAILED end
 print("Test 5 passed")
 n_test = n_test + 1
 
-ShowPrices()
 
 -- test 6: Change the unit on a price.
-val = ChangeUnit(N2_price, "$/lb")
+val = ChangeUnit(N1_price, "$/lb")
 if val == nil then goto FAILED end
 print("Test 6 passed")
 n_test = n_test + 1
 
-ShowPrices()
+--ShowPrices()
 
-val = ChangeUnit(N2_price, "$/kg")
+--val = ChangeUnit(N2_price, "$/kg")
 
 -- test 7: Create an objective.
-obj1, N1_val = Objective( "objtest", "$/hr",
-    {"N1_val", "mix1.N1.mass", "Prices.N1_kg", "$/hr", -1.0}
+costs, N1_val = Objective( "costs", "$/min", -1.0,
+    {"N1_val", "mix1.N1.mass", "Prices.N1_kg", "$/hr"}
 )
-if obj1 == nil or N1_val == nil then goto FAILED end
+if costs == nil or N1_val == nil then goto FAILED end
 print("Test 7 passed")
 n_test = n_test + 1
 
-SetObjective(obj1)
-
 -- test 8: Add terms to the objective.
-obj1, N2_val, OUT_val = Objective( obj1,
-    {"N2_val", "mix1.N2.mass", "Prices.N2_kg", "$/hr", -1.0},
-    {"OUT_val", "mix1.OUT.mass", "Prices.OUT_kg", "$/hr"}
+costs, N2_val = Objective( costs,
+    {"N2_val", "mix1.N2.mass", "Prices.N2_kg", "$/hr"}
 )
-if obj1 == nil or N2_val == nil or OUT_val == nil then goto FAILED end
+if costs == nil or N2_val == nil then goto FAILED end
 print("Test 8 passed")
 n_test = n_test + 1
 
-ShowObjective(obj1)
+sales, OUT_val = Objective( "sales", "$/hr",
+    {"OUT_val", "mix1.OUT.mass", "Prices.OUT_kg", "$/hr"}
+)
+
+profit = Objective( "profit", "$/min",
+    sales,
+    costs)
+
+SetObjective(profit)
 
 Eval([[
     mix1.N1.mass_H2 = 1.0
@@ -124,6 +129,12 @@ Eval([[
 ]])
 
 Init()
+
+EvalObjective()
+ShowPrices()
+ShowObjective()
+EvalObjGrad()
+ShowObjGrad()
 
 Eval([[
     free mix1.N1.mass_H2

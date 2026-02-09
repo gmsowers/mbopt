@@ -106,7 +106,7 @@ struct TypedPtr {
 };
 
 template <typename T>
-T* get_pointer(lua_State* L, int index, const string& err_msg) {
+T* get_typed_ptr(lua_State* L, int index, const string& err_msg) {
     if (index > 0) lua_pushvalue(L, index);
     auto tp = static_cast<TypedPtr*>(lua_touserdata(L, -1));
     check(L, tp != nullptr, err_msg);
@@ -119,9 +119,9 @@ T* get_pointer(lua_State* L, int index, const string& err_msg) {
 }
 
 template <typename T>
-T* get_pointer_elem(lua_State* L, int index, const string& err_msg) {
+T* get_typed_ptr_elem(lua_State* L, int index, const string& err_msg) {
     check(L, lua_rawgeti(L, -1, index) == LUA_TUSERDATA, err_msg);
-    return get_pointer<T>(L, 0, err_msg);
+    return get_typed_ptr<T>(L, 0, err_msg);
 }
 
 template <typename T, typename sub_T = void>
@@ -141,7 +141,7 @@ int solve_model(lua_State* L) {
     auto n_args = lua_gettop(L);
     check(L, n_args <= 1, "Solve: expected 0 or 1 argument.");
     if (n_args == 1)
-        M->obj = get_pointer<Objective>(L, 1, "Solve: expected argument to be an Objective.");
+        M->obj = get_typed_ptr<Objective>(L, 1, "Solve: expected argument to be an Objective.");
     int retval = solver->OptimizeTNLP(M.get());
     lua_pushinteger(L, retval);
     return 1;
@@ -208,7 +208,7 @@ int eval_objective(lua_State* L) {
         lua_pushnumber(L, M->eval_objective());
         return 1;
     }
-    auto obj = get_pointer<Objective>(L, 1, "EvalObjective: expected argument 1 to be an Objective.");
+    auto obj = get_typed_ptr<Objective>(L, 1, "EvalObjective: expected argument 1 to be an Objective.");
     lua_pushnumber(L, obj->eval());
     return 1;
 
@@ -473,7 +473,7 @@ int show_objective(lua_State* L) {
         M->show_objective();
         return 0;
     }
-    auto obj = get_pointer<Objective>(L, 1, "ShowObjective: expected argument 1 to be an Objective.");
+    auto obj = get_typed_ptr<Objective>(L, 1, "ShowObjective: expected argument 1 to be an Objective.");
     M->show_objective(obj);
     return 0;
 }
@@ -636,9 +636,7 @@ int add_Block(lua_State* L, const string& blk_type) {
     vector<Stream*> inlets(n_inlets);
     lua_pushvalue(L, 2);    // Push argument 2 onto the stack.
     for (lua_Unsigned i = 1; i <= n_inlets; i++) {
-        inlets[i - 1] = get_pointer_elem<Stream>(L, i,
-            format("{} element {} of argument 2 to be a Stream", msg, i));
-        check(L, inlets[i - 1] != nullptr,
+        inlets[i - 1] = get_typed_ptr_elem<Stream>(L, i,
             format("{} element {} of argument 2 to be a Stream", msg, i));
     }
     lua_pop(L, 1);  // Pop argument 2
@@ -649,9 +647,7 @@ int add_Block(lua_State* L, const string& blk_type) {
     vector<Stream*> outlets(n_outlets);
     lua_pushvalue(L, 3);    // Push argument 3 onto the stack.
     for (lua_Unsigned i = 1; i <= n_outlets; i++) {
-        outlets[i - 1] = get_pointer_elem<Stream>(L, i,
-            format("{} element {} of argument 3 to be a Stream.", msg, i));
-        check(L, outlets[i - 1] != nullptr,
+        outlets[i - 1] = get_typed_ptr_elem<Stream>(L, i,
             format("{} element {} of argument 3 to be a Stream.", msg, i));
     }
     lua_pop(L, 1);  // Pop argument 3
@@ -705,17 +701,17 @@ int add_variables(lua_State* L) {
     checkM(L);
     const string msg {"Variables: expected "};
     auto n_args = lua_gettop(L);
-    check(L, n_args >= 2, format("{}at leat 2 arguments, got {}.", msg, n_args));
-    auto calc_p = get_pointer<Calc>(L, 1, msg + "argument 1 to be a Calc.");
+    check(L, n_args >= 2, format("{}at least 2 arguments, got {}.", msg, n_args));
+    auto calc_p = get_typed_ptr<Calc>(L, 1, msg + "argument 1 to be a Calc.");
     auto n_vars = n_args - 1;
     vector<Variable*> vars(n_vars);
     for (lua_Unsigned i = 2; i <= n_args; i++) {
         check(L, lua_istable(L, i), format("{}argument {} to be a table.", msg, i));
         auto n_elem = lua_rawlen(L, i);    // number of elements in the ith argument table
-        check(L, n_elem == 2, format("{}argument {} to look like {{string, Unit}}", msg, i));
+        check(L, n_elem == 2, format("{}argument {} to look like {{string, Unit}}.", msg, i));
         lua_pushvalue(L, i);    // Push ith arg onto stack, where arg = {var_name, unit}
-        auto var_name = get_string_elem(L, 1, format("{}argument {} to look like {{string, Unit}}", msg, i));  // element 1 is variable name
-        auto unit = get_pointer_elem<Unit>(L, 2, format("{}argument {} to look like {{string, Unit}}", msg, i));  // element 2 is variable name
+        auto var_name = get_string_elem(L, 1, format("{}argument {} to look like {{string, Unit}}.", msg, i));  // element 1 is variable name
+        auto unit = get_typed_ptr_elem<Unit>(L, 2, format("{}argument {} to look like {{string, Unit}}.", msg, i));  // element 2 is variable name
         lua_pop(L, 1);
         auto v = M->add_var(calc_p->prefix + var_name, unit);
         calc_p->x.push_back(v);
@@ -734,7 +730,7 @@ int add_constraints(lua_State* L) {
     const string msg {"Constraints: expected "};
     auto n_args = lua_gettop(L);
     check(L, n_args >= 2, format("{}at least 2 arguments, got {}.", msg, n_args));
-    auto calc_p = get_pointer<Calc>(L, 1, msg + "argument 1 to be a Calc.");
+    auto calc_p = get_typed_ptr<Calc>(L, 1, msg + "argument 1 to be a Calc.");
     auto n_eqs = n_args - 1;
     vector<Constraint*> eqs(n_eqs);
     for (lua_Unsigned i = 2; i <= n_args; i++) {
@@ -757,16 +753,16 @@ int add_jacobian_nzs(lua_State* L) {
     const string msg {"JacobianNZs: expected "};
     auto n_args = lua_gettop(L);
     check(L, n_args >= 2, format("{}at least 2 arguments, got {}.", msg, n_args));
-    auto calc_p = get_pointer<Calc>(L, 1, msg + "argument 1 to be a Calc.");
+    auto calc_p = get_typed_ptr<Calc>(L, 1, msg + "argument 1 to be a Calc.");
     auto n_jnzs = n_args - 1;
     vector<JacobianNZ*> jnzs(n_jnzs);
     for (lua_Unsigned i = 2; i <= n_args; i++) {
         check(L, lua_istable(L, i), format("{}argument {} to be a table.", msg, i));
         auto n_elem = lua_rawlen(L, i);    // number of elements in the ith JNZ list
-        check(L, n_elem == 2, format("{}argument {} to look like {{Constraint, Variable}}", msg, i));
+        check(L, n_elem == 2, format("{}argument {} to look like {{Constraint, Variable}}.", msg, i));
         lua_pushvalue(L, i);    // Push ith arg onto stack, where arg = {con, var}
-        auto con = get_pointer_elem<Constraint>(L, 1, format("{}argument {} to look like {{Constraint, Variable}}", msg, i));  // element 1 is a Constraint
-        auto var = get_pointer_elem<Variable>(L, 2, format("{}argument {} to look like {{Constraint, Variable}}", msg, i));  // element 2 is a Variable
+        auto con = get_typed_ptr_elem<Constraint>(L, 1, format("{}argument {} to look like {{Constraint, Variable}}.", msg, i));  // element 1 is a Constraint
+        auto var = get_typed_ptr_elem<Variable>(L, 2, format("{}argument {} to look like {{Constraint, Variable}}.", msg, i));  // element 2 is a Variable
         lua_pop(L, 1);
         auto jnz = M->add_J_NZ(con, var);
         calc_p->J.push_back(jnz);
@@ -784,28 +780,29 @@ int add_streams(lua_State* L) {
     checkFS(L);
     const string msg {"Streams: expected "};
     int n_strms = lua_gettop(L);
-    check(L, n_strms > 0, format("{}at least one argument", msg));
+    check(L, n_strms > 0, format("{}at least one argument.", msg));
 
     vector<Stream*> strms(n_strms);
     for (int i = 1; i <= n_strms; i++) {
-        check(L, lua_istable(L, i), format("{}argument {} to be a table", msg, i));
-        check(L, lua_rawlen(L, i) == 2, format("{}length of argument {} to be 2", msg, i));
-        lua_pushvalue(L, i);    // Push ith arg onto stack, where arg = {"Name", {"Comp1", "Comp2", etc}}
-        string strm_name = get_string_elem(L, 1, format("{}element 1 of argument {} to be a string", msg, i));
+        // ith arg looks like {"Name", {"Comp1", "Comp2", etc}}
+        check(L, lua_istable(L, i), format("{}argument {} to be a table with 2 elements.", msg, i));
+        check(L, lua_rawlen(L, i) == 2, format("{}argument {} to be a table with 2 elements.", msg, i));
+        lua_pushvalue(L, i);    // Push ith arg
+        string strm_name = get_string_elem(L, 1, format("{}element 1 of argument {} to be a string.", msg, i));
 
         check(L, lua_rawgeti(L, i, 2) == LUA_TTABLE,
-            format("{}element 2 of argument {} to be a table", msg, i)); // Push elem 2 of ith arg onto stack, e.g., {"Comp1", "Comp2"}
+            format("{}element 2 of argument {} to be a table.", msg, i)); // Push elem 2 of ith arg, e.g., {"Comp1", "Comp2"}
         int n_comps = lua_rawlen(L, -1);
-        check(L, n_comps > 0, format("{}at least one component in argument {}", msg, i));
+        check(L, n_comps > 0, format("{}at least one component in element 2 of argument {}.", msg, i));
         vector<string> comps(n_comps);
         for (int j = 1; j <= n_comps; j++)
-            comps[j - 1] = get_string_elem(L, j, format("{}component {} in argument {} to be a string", msg, j, i));
+            comps[j - 1] = get_string_elem(L, j, format("{}component {} in element 2 of argument {} to be a string.", msg, j, i));
 
         lua_pop(L, 2); // Pop ith arg and elem 2 of ith arg
         strms[i - 1] = FS->add_stream(strm_name, std::move(comps));
     }
 
-    // Push pointers to the created streams onto the stack.
+    // Push pointers to the created streams.
     for (int i = 1; i <= n_strms; i++)
         push_pointer<Stream>(L, strms[i - 1]);
 
@@ -822,16 +819,15 @@ int flowsheet(lua_State* L) {
         return 1;
     }
     check(L, lua_isstring(L, 1) || lua_isuserdata(L, 1), msg + "argument to be a string or a Flowsheet.");
-    Flowsheet* fs {};
     if (lua_isstring(L, 1)) {
         string fs_name = lua_tostring(L, 1);
-        fs = FS->add_flowsheet(fs_name);
+        auto fs = FS->add_flowsheet(fs_name);
         FS = fs;
         push_pointer<Flowsheet>(L, fs);
         return 1;
     }
     else if (lua_isuserdata(L, 1)) {
-        FS = get_pointer<Flowsheet>(L, 1, msg + "argument to be a string or a Flowsheet.");
+        FS = get_typed_ptr<Flowsheet>(L, 1, msg + "argument to be a string or a Flowsheet.");
         return 0;
     }
     return 0;
@@ -844,11 +840,11 @@ int is_same_ptr(lua_State* L) {
     TypedPtr* tp1 {}, *tp2 {};
     if (lua_isuserdata(L, 1)) {
         tp1 = static_cast<TypedPtr*>(lua_touserdata(L, 1));
-        check(L, tp1, msg + "argument 1 to be a TypedPtr.");        
+        check(L, tp1, msg + "argument 1 to be an object (e.g., Variable, Flowsheet, Objective, etc.).");        
     }
     if (lua_isuserdata(L, 2)) {
         tp2 = static_cast<TypedPtr*>(lua_touserdata(L, 2));
-        check(L, tp2, msg + "argument 2 to be a TypedPtr.");        
+        check(L, tp2, msg + "argument 2 to be an object (e.g., Variable, Flowsheet, Objective, etc.).");        
     }
     bool is_same = (tp1->ptr == tp2->ptr);
     lua_pushboolean(L, is_same);
@@ -861,8 +857,8 @@ int add_bridge(lua_State* L) {
     int n_args = lua_gettop(L);
     check(L, n_args == 2, format("{}2 arguments, got {}.", msg, n_args));
     Stream* strm_from {}, *strm_to {};
-    strm_from = get_pointer<Stream>(L, 1, msg + "argument 1 to be a Stream.");
-    strm_to   = get_pointer<Stream>(L, 2, msg + "argument 2 to be a Stream.");
+    strm_from = get_typed_ptr<Stream>(L, 1, msg + "argument 1 to be a Stream.");
+    strm_to   = get_typed_ptr<Stream>(L, 2, msg + "argument 2 to be a Stream.");
     bool ok = M->add_bridge(strm_from, strm_to);
     lua_pushboolean(L, ok);
     return 1;
@@ -876,18 +872,20 @@ int add_prices(lua_State* L) {
     vector<Price*> prices(n_args);
     for (lua_Unsigned i = 1; i <= n_args; i++) {
         check(L, lua_istable(L, i), format("{}argument {} to be a table.", msg, i));
-        auto n_elem = lua_rawlen(L, i);    // number of elements in the ith argument table
-        check(L, n_elem == 3, format("{}argument {} to look like {{string, number, Unit}}", msg, i));
-        lua_pushvalue(L, i);    // Push ith arg onto stack, where arg = {price_name, value, unit}
-        auto price_name = get_string_elem(L, 1, format("{}argument {} to look like {{string, number, Unit}}", msg, i));  // element 1 is price name
-        auto value = get_double_elem(L, 2, format("{}argument {} to look like {{string, number, Unit}}", msg, i));       // element 2 is price value
-        auto unit = get_pointer_elem<Unit>(L, 3, format("{}argument {} to look like {{string, number, Unit}}", msg, i)); // element 3 is price unit
-        lua_pop(L, 1);
+        auto n_elem = lua_rawlen(L, i);    // number of elements in the ith arg, where arg = {price_name, value, unit}
+        check(L, n_elem == 3, format("{}argument {} to look like {{string, number, Unit}}.", msg, i));
+        
+        lua_pushvalue(L, i);               // push ith arg
+        auto price_name = get_string_elem(L, 1, format("{}argument {} to look like {{string, number, Unit}}.", msg, i));
+        auto value      = get_double_elem(L, 2, format("{}argument {} to look like {{string, number, Unit}}.", msg, i));
+        auto unit       = get_typed_ptr_elem<Unit>(L, 3, format("{}argument {} to look like {{string, number, Unit}}.", msg, i));
+        lua_pop(L, 1);                     // pop ith arg
+
         auto p = M->add_price(price_name, value, unit);
         prices[i - 1] = p;
     }
 
-    // Push pointers to the created prices onto the stack.
+    // Push pointers to the created prices.
     for (int i = 1; i <= n_args; i++)
         push_pointer<Price>(L, prices[i - 1]);
 
@@ -896,12 +894,19 @@ int add_prices(lua_State* L) {
 
 int set_objective(lua_State* L) {
     checkM(L);
-    check(L, lua_gettop(L) == 1, "SetObjective: expected 1 argument, nil or an Objective.");
-    if (lua_isnil(L, 1)) {
+    check(L, lua_gettop(L) == 1, "SetObjective: expected 1 argument that is one of: (nil, Objective, name of an Objective).");
+    if (lua_isnil(L, 1))
         M->obj = nullptr;
-        return 0;
+    else if (lua_isuserdata(L, 1))
+        M->obj = get_typed_ptr<Objective>(L, 1, "SetObjective: expected argument to be one of: (nil, Objective, name of an Objective).");
+    else if (lua_isstring(L, 1)) {
+        string obj_name = lua_tostring(L, 1);
+        check(L, M->objectives.contains(obj_name), format("SetObjective: expected argument \"{}\" to be a name of an existing Objective", obj_name));
+        M->obj = M->objectives[obj_name].get();
     }
-    M->obj = get_pointer<Objective>(L, 1, "SetObjective: expected argument 1 to be nil or an Objective.");
+    else
+        luaL_error(L, "SetObjective: expected argument to be one of: (nil, Objective, name of an Objective).");
+
     return 0;
 }
 
@@ -922,7 +927,7 @@ int add_objective(lua_State* L) {
             obj = M->objectives[obj_name].get();
     }
     else if (lua_isuserdata(L, 1)) {
-        obj = get_pointer<Objective>(L, 1, msg + "argument 1 to be an Objective.");
+        obj = get_typed_ptr<Objective>(L, 1, msg + "argument 1 to be an Objective.");
     }
     n_start++;
 
@@ -936,7 +941,7 @@ int add_objective(lua_State* L) {
             obj_unit = M->unit_set.units[unit_str].get();
         }
         else {
-            obj_unit = get_pointer<Unit>(L, 2, msg + "argument 2 to be a valid Unit.");
+            obj_unit = get_typed_ptr<Unit>(L, 2, msg + "argument 2 to be a valid Unit.");
         }
         n_start++;
 
@@ -955,49 +960,68 @@ int add_objective(lua_State* L) {
     int n_terms = n_args - n_start + 1;
     vector<std::variant<ObjTerm*, Objective*>> terms(n_terms);
     for (lua_Unsigned i = n_start; i <= n_args; i++) {
+        // ith arg is either a table or an Objective
         if (lua_istable(L, i)) {
-            const string msg2 {format("{}argument {} to look like {{string, Variable, Price, Unit, <number>}}", msg, i)};
-            auto n_elem = lua_rawlen(L, i);    // number of elements in the ith argument table
+            const string msg2 {format("{}argument {} to look like {{string, Variable, Price, Unit, <number>}}.", msg, i)};
+            auto n_elem = lua_rawlen(L, i);    // number of elements in the ith arg, where arg = {term_name, Variable, Price, Unit, <scale>}
             check(L, n_elem == 4 || n_elem == 5, msg2);
-            lua_pushvalue(L, i);    // Push ith arg onto stack, where arg = {term_name, Variable, Price, Unit, <scale>}
-            auto term_name = get_string_elem(L, 1, msg2);  // element 1 is term name
+            lua_pushvalue(L, i);               // push ith arg 
+            
+            auto term_name = get_string_elem(L, 1, msg2);   // element 1 is term name
+
             Variable* var;
-            if (lua_rawgeti(L, -1, 2) == LUA_TSTRING) {   // element 2 is a variable name or a Variable
+            if (lua_rawgeti(L, -1, 2) == LUA_TSTRING) {     // element 2 is a variable name or a Variable
                 lua_pop(L, 1);
                 auto var_name = get_string_elem(L, 2, msg2);
                 check(L, M->x_map.contains(var_name), msg2);
                 var = M->x_map[var_name];
             }
             else
-                var = get_pointer_elem<Variable>(L, 2, msg2);
+                var = get_typed_ptr_elem<Variable>(L, 2, msg2);
+
             Price* price;
-            if (lua_rawgeti(L, -1, 3) == LUA_TSTRING) {   // element 3 is a price name or a Price
+            if (lua_rawgeti(L, -1, 3) == LUA_TSTRING) {     // element 3 is a price name or a Price
                 lua_pop(L, 1);
                 auto price_name = get_string_elem(L, 3, msg2);
                 check(L, M->prices.contains(price_name), msg2);
                 price = M->prices[price_name].get();
             }
             else
-                price = get_pointer_elem<Price>(L, 3, msg2);
+                price = get_typed_ptr_elem<Price>(L, 3, msg2);
+
             Unit* unit;
-            if (lua_rawgeti(L, -1, 4) == LUA_TSTRING) {   // element 4 is a unit string or a Unit
+            if (lua_rawgeti(L, -1, 4) == LUA_TSTRING) {     // element 4 is a unit string or a Unit
                 lua_pop(L, 1);
                 auto unit_str = get_string_elem(L, 4, msg2);
                 check(L, M->unit_set.units.contains(unit_str), msg2);
                 unit = M->unit_set.units[unit_str].get();
             }
             else
-                unit = get_pointer_elem<Unit>(L, 4, msg2);
+                unit = get_typed_ptr_elem<Unit>(L, 4, msg2);
+
             double scale {1.0};
-            if (n_elem == 5)
+            if (n_elem == 5)                                // element 5, if present, is a scale factor
                 scale = get_double_elem(L, 5, msg2);
 
-            lua_pop(L, 1);
-            auto obj_term = obj->add_objterm(term_name, var, price, unit, scale);
-            terms[i - n_start] = obj_term;
+            lua_pop(L, 1);                     // pop ith arg
+
+            terms[i - n_start] = obj->add_objterm(term_name, var, price, unit, scale);
         }
         else {
-            terms[i - n_start] = get_pointer<Objective>(L, 1, msg + "argument 1 to be an Objective.");
+            // ith arg is an Objective or a name of an Objective
+            Objective* child_obj {};
+            if (lua_isuserdata(L, i))
+                child_obj = get_typed_ptr<Objective>(L, i, format("{}argument {} to be an Objective.", msg, i));
+            else if (lua_isstring(L, i)) {
+                string child_obj_name = lua_tostring(L, i);
+                check(L, M->objectives.contains(child_obj_name), format("{}argument {} \"{}\"to be the name of an existing Objective.", msg, i, child_obj_name));
+                child_obj = M->objectives[child_obj_name].get();
+            }
+            else
+                luaL_error(L, format("{}argument {} to be an Objective or the name of an Objective.", msg, i).c_str());
+
+            obj->add_objective(child_obj);
+            terms[i - n_start] = child_obj;
         }         
     }
 
@@ -1019,67 +1043,67 @@ int create_model(lua_State* L) {
     const string msg_kinds {"Model: in the \"kinds\" table, expected "};
     const string msg_units {"Model: in the \"units\" table, expected "};
     auto n_args = lua_gettop(L);
-    check(L, n_args == 4, format("{}4 arguments, got {}", msg_expected, n_args));
-    check(L, lua_isstring(L, 1) && !lua_isnumber(L, 1), msg_expected + "argument 1 to be a string");  // arg 1 is the model name
-    check(L, lua_isstring(L, 2) && !lua_isnumber(L, 2), msg_expected + "argument 2 to be a string");  // arg 2 is the index flowsheet name
-    check(L, lua_istable(L, 3),  msg_expected + "argument 3 to be a table");  // arg 3 is a kinds table
-    check(L, lua_istable(L, 4),  msg_expected + "argument 4 to be a table");  // arg 4 is a units table
+    check(L, n_args == 4, format("{}4 arguments, got {}.", msg_expected, n_args));
+    check(L, lua_isstring(L, 1) && !lua_isnumber(L, 1), msg_expected + "argument 1 to be a string.");  // arg 1 is the model name
+    check(L, lua_isstring(L, 2) && !lua_isnumber(L, 2), msg_expected + "argument 2 to be a string.");  // arg 2 is the index flowsheet name
+    check(L, lua_istable(L, 3),  msg_expected + "argument 3 to be a table.");  // arg 3 is a kinds table
+    check(L, lua_istable(L, 4),  msg_expected + "argument 4 to be a table.");  // arg 4 is a units table
 
     UnitSet u {};
 
-    string name = lua_tostring(L, 1);               
-    check(L, !name.empty(), msg_expected + "argument 1 to be a non-empty string");
-    string index_fs_name = lua_tostring(L, 2);      
-    check(L, !index_fs_name.empty(), msg_expected + "argument 2 to be a non-empty string");
+    string name = lua_tostring(L, 1);   // Model name
+    check(L, !name.empty(), msg_expected + "argument 1 to be a non-empty string.");
+
+    string index_fs_name = lua_tostring(L, 2);  // Index Flowsheet name
+    check(L, !index_fs_name.empty(), msg_expected + "argument 2 to be a non-empty string.");
 
     // kinds table:
-    lua_pushnil(L);     // push a nil key to start
-    while (lua_next(L, 3) != 0) {                   // pops the key, then pushes next key-value pair
-        string kind_str = lua_tostring(L, -2);      // key is kind_str
-        check(L, lua_istable(L, -1), format("{}key \"{}\" to reference a table", msg_kinds, kind_str)); // value is table with 1 or 2 strings
+    lua_pushnil(L);                             // push a nil key to start
+    while (lua_next(L, 3) != 0) {               // pops the key, then pushes next key-value pair
+        string kind_str = lua_tostring(L, -2);  // key is kind_str
+        check(L, lua_istable(L, -1), format("{}key \"{}\" to reference a table.", msg_kinds, kind_str)); // value is table with 1 or 2 strings
 
-        auto n_str = lua_rawlen(L, -1);             // number of strings in the table
-        check(L, n_str > 0, format("{}1 or 2 strings in the \"{}\" definition", msg_kinds, kind_str));
+        auto n_str = lua_rawlen(L, -1);         // number of strings in the table
+        check(L, n_str > 0 && n_str < 3, format("{}1 or 2 strings in the \"{}\" definition.", msg_kinds, kind_str));
 
         string base_unit_str = get_string_elem(L, 1,
-            format("{}element 1 in the \"{}\" definition to be a string", msg_kinds, kind_str)); // element 1 is base_unit_str
+            format("{}element 1 in the \"{}\" definition to be a string.", msg_kinds, kind_str)); // element 1 is base_unit_str
 
-        string default_unit_str = (n_str > 1 ? get_string_elem(L, 2,
-            format("{}element 2 in the \"{}\" definition to be a string", msg_kinds, kind_str)) : base_unit_str); // element 2 (optional) is default_unit_str
+        string default_unit_str = (n_str == 2 ? get_string_elem(L, 2,
+            format("{}element 2 in the \"{}\" definition to be a string.", msg_kinds, kind_str)) : base_unit_str); // element 2 (optional) is default_unit_str
 
         lua_pop(L, 1);  // pop the value (the {base_unit_str, default_unit_str} table)
         u.add_kind(kind_str, base_unit_str, default_unit_str);
     }
 
     // units table:
-    lua_pushnil(L);     // push a nil key to start
-    while (lua_next(L, 4) != 0) {                   // pops the key, then pushes next key-value pair
-        string kind_str = lua_tostring(L, -2);      // key is kind_str
-        check(L, lua_istable(L, -1), format("{}key \"{}\" to reference a table", msg_units, kind_str)); // value is a table of n_units tables
-        auto n_units = lua_rawlen(L, -1);           // value is a list of unit lists for this kind
+    lua_pushnil(L);                             // push a nil key to start
+    while (lua_next(L, 4) != 0) {               // pops the key, then pushes next key-value pair
+        string kind_str = lua_tostring(L, -2);  // key is kind_str
+        check(L, lua_istable(L, -1), format("{}key \"{}\" to reference a table.", msg_units, kind_str)); // value is a table of n_units tables
+        auto n_units = lua_rawlen(L, -1);       // value is a list of units for this kind
 
         for (lua_Unsigned i = 1; i <= n_units; i++) {
-            check(L, lua_rawgeti(L, -1, i) == LUA_TTABLE, format("{}unit {} in \"{}\" definition to be a list", msg_units, i, kind_str)); // push the ith unit list on the stack
-            auto n_elem = lua_rawlen(L, -1);                // number of elements in the ith unit list
-            check(L, n_elem > 1 && n_elem < 4, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}", msg_units, i, kind_str));
+            check(L, lua_rawgeti(L, -1, i) == LUA_TTABLE, format("{}unit {} in \"{}\" definition to be a list.", msg_units, i, kind_str)); // push the ith unit list
+            auto n_elem = lua_rawlen(L, -1);    // number of elements in the ith unit list
+            check(L, n_elem == 2 || n_elem == 3, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}.", msg_units, i, kind_str));
 
-            string unit_str = get_string_elem(L, 1, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}", msg_units, i, kind_str));     // element 1 is unit_str
-            double unit_ratio = get_double_elem(L, 2, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}", msg_units, i, kind_str));   // element 2 is unit_ratio
-            double unit_offset = (n_elem > 2 ? 
-                get_double_elem(L, 3, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}", msg_units, i, kind_str)) : 0.0); // element 3 (optional) is unit_offset
+            string unit_str = get_string_elem(L, 1, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}.", msg_units, i, kind_str));     // element 1 is unit_str
+            double unit_ratio = get_double_elem(L, 2, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}.", msg_units, i, kind_str));   // element 2 is unit_ratio
+            double unit_offset = (n_elem == 3 ? 
+                get_double_elem(L, 3, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}.", msg_units, i, kind_str)) : 0.0); // element 3 (optional) is unit_offset
 
-            lua_pop(L, 1);  // pop the ith table
+            lua_pop(L, 1);  // pop the ith unit list
             u.add_unit(unit_str, kind_str, unit_ratio, unit_offset);
         }
 
-        lua_pop(L, 1);  // pop the value (a list of unit lists)
+        lua_pop(L, 1);  // pop the value (a list of unit lists) of the current key-value pair
     }
 
-    // Create the model.
     M = make_unique<Model>(name, index_fs_name, std::move(u));
     FS = M->index_fs.get();
 
-    // Push pointers to the Model and the index Flowsheet onto the stack.
+    // Push pointers to the Model and the index Flowsheet.
     push_pointer<Model>(L, M.get());
     push_pointer<Flowsheet>(L, FS);
 
