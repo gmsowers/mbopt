@@ -8,6 +8,7 @@
 #include "Splitter.hpp"
 #include "Separator.hpp"
 #include "YieldReactor.hpp"
+#include "MultiYieldReactor.hpp"
 
 static unique_ptr<Model> M;
 static Flowsheet*        FS;
@@ -617,23 +618,23 @@ int eval_expr(lua_State* L) {
 }
 
 template <typename T>
-int add_Block(lua_State* L, const string& blk_type) {
+void start_Block(lua_State* L, const string& blk_type, string& blk_name, vector<Stream*>& inlets, vector<Stream*>& outlets) {
     checkFS(L);
     const string msg {blk_type + ": expected "};
     auto n_args = lua_gettop(L);
-    check(L, n_args == 3, format("{}3 arguments, got {}.", msg, n_args));
+    check(L, n_args >= 3, format("{}at least 3 arguments, got {}.", msg, n_args));
     check(L, lua_isstring(L, 1) && !lua_isnumber(L, 1), msg + "argument 1 to be a string.");
     check(L, lua_istable(L, 2), msg + "argument 2 to be a table of Streams.");
     check(L, lua_istable(L, 3), msg + "argument 3 to be a table of Streams.");
 
     // Block name,
-    string blk_name = lua_tostring(L, 1);               
-    check(L, !blk_name.empty(), msg + "argument 1 to be a non-empty string.");
+    blk_name = lua_tostring(L, 1);               
+    check(L, !blk_name.empty(), msg + "block name to be a non-empty string.");
 
     // Table of inlet streams.
     auto n_inlets = lua_rawlen(L, 2);
     check(L, n_inlets > 0, msg + "argument 2 to be a table of at least one Stream.");
-    vector<Stream*> inlets(n_inlets);
+    inlets.resize(n_inlets);
     lua_pushvalue(L, 2);    // Push argument 2 onto the stack.
     for (lua_Unsigned i = 1; i <= n_inlets; i++) {
         inlets[i - 1] = get_typed_ptr_elem<Stream>(L, i,
@@ -644,21 +645,28 @@ int add_Block(lua_State* L, const string& blk_type) {
     // Table of outlet streams.
     auto n_outlets = lua_rawlen(L, 3);
     check(L, n_outlets > 0, msg + "argument 3 to be a table of at least one Stream.");
-    vector<Stream*> outlets(n_outlets);
+    outlets.resize(n_outlets);
     lua_pushvalue(L, 3);    // Push argument 3 onto the stack.
     for (lua_Unsigned i = 1; i <= n_outlets; i++) {
         outlets[i - 1] = get_typed_ptr_elem<Stream>(L, i,
             format("{} element {} of argument 3 to be a Stream.", msg, i));
     }
     lua_pop(L, 1);  // Pop argument 3
+}
 
-    // Create the block.
-    auto blk_p = FS->add_block<T>(blk_name, std::move(inlets), std::move(outlets));
-
-    // Push a pointer to a Block with subtype T onto the stack.
+template <typename T, typename ...blk_params_T>
+int finish_Block(lua_State* L, string& blk_name, vector<Stream*>& inlets, vector<Stream*>& outlets, blk_params_T& ...blk_params) {
+    auto blk_p = FS->add_block<T>(blk_name, std::move(inlets), std::move(outlets), blk_params...);
     push_pointer<Block, T>(L, blk_p);
-
     return 1;
+}
+
+template <typename T>
+int add_Block(lua_State* L, const string& blk_type) {
+    string blk_name;
+    vector<Stream*> inlets, outlets;
+    start_Block<T>(L, blk_type, blk_name, inlets, outlets);
+    return finish_Block<T>(L, blk_name, inlets, outlets);
 }
 
 int add_Mixer(lua_State* L) {
@@ -674,7 +682,37 @@ int add_Separator(lua_State* L) {
 }
 
 int add_YieldReactor(lua_State* L) {
-    return add_Block<YieldReactor>(L, "YieldReactor");
+    string blk_name;
+    vector<Stream*> inlets, outlets;
+    start_Block<YieldReactor>(L, "YieldReactor", blk_name, inlets, outlets);
+    return finish_Block<YieldReactor>(L, blk_name, inlets, outlets);
+}
+
+int add_MultiYieldReactor(lua_State* L) {
+    string blk_name;
+    vector<Stream*> inlets, outlets;
+    start_Block<YieldReactor>(L, "YieldReactor", blk_name, inlets, outlets);
+
+    const string msg {"MultiYieldReactor: expected "};
+
+    auto n_args = lua_gettop(L);
+    auto n_feeds = inlets.size();
+    check(L, n_args >= n_feeds + 4, format("{}{} arguments, got {}.", msg, n_feeds + 4, n_args));
+    check(L, lua_isstring(L, 4) && !lua_isnumber(L, 4), msg + "argument 4 to be a string.");
+
+    // Reactor name,
+    string reactor_name = lua_tostring(L, 4);
+    check(L, !reactor_name.empty(), msg + "reactor name to be a non-empty string.");
+
+    // Feed names.
+    vector<string> feed_names(n_feeds);
+    for (int i = 0, j = 5; i < n_feeds; i++, j++) {
+        check(L, lua_isstring(L, j) && !lua_isnumber(L, j), format("{}argument {} to be a string.", msg, j));
+        feed_names[i] = lua_tostring(L, j);
+        check(L, !feed_names[i].empty(), format("{}argument {} to be a non-empty string.", msg, j));
+    }
+
+    return finish_Block<MultiYieldReactor, vector<string>&, const string&>(L, blk_name, inlets, outlets, feed_names, reactor_name);
 }
 
 int add_Calc(lua_State* L) {
@@ -1136,53 +1174,54 @@ lua_State* start_lua() {
     luaL_openlibs(L);
     scripter_lua_state = L;
 
-    lua_register(L, "Model",           create_model);
-    lua_register(L, "Flowsheet",       flowsheet);
-    lua_register(L, "Streams",         add_streams);
-    lua_register(L, "Eval",            eval_expr);
-    lua_register(L, "Init",            initialize);
-    lua_register(L, "ShowModel",       show_summary);
-    lua_register(L, "ShowVariables",   show_variables);
-    lua_register(L, "ShowConstraints", show_constraints);
-    lua_register(L, "ShowJacobian",    show_jacobian);
-    lua_register(L, "ShowHessian",     show_hessian);
-    lua_register(L, "ShowConnections", show_connections);
-    lua_register(L, "ShowPrices",      show_prices);
-    lua_register(L, "ShowObjective",   show_objective);
-    lua_register(L, "ShowObjGrad",     show_obj_grad);
-    lua_register(L, "Val",             get_value);
-    lua_register(L, "BaseVal",         get_base_value);
-    lua_register(L, "LB",              get_lower);
-    lua_register(L, "UB",              get_upper);
-    lua_register(L, "Spec",            get_spec);
-    lua_register(L, "Var",             get_var);
-    lua_register(L, "Unit",            get_unit);
-    lua_register(L, "ChangeUnit",      change_unit);
-    lua_register(L, "SetValue",        set_value);
-    lua_register(L, "SolverOption",    set_solver_option);
-    lua_register(L, "Solve",           solve_model);
-    lua_register(L, "InitSolver",      initialize_solver);
-    lua_register(L, "EvalConstraints", eval_constraints);
-    lua_register(L, "EvalJacobian",    eval_jacobian);
-    lua_register(L, "EvalHessian",     eval_hessian);
-    lua_register(L, "EvalObjective",   eval_objective);
-    lua_register(L, "EvalObjGrad",     eval_obj_grad);
-    lua_register(L, "Variables",       add_variables);
-    lua_register(L, "Constraints",     add_constraints);
-    lua_register(L, "JacobianNZs",     add_jacobian_nzs);
-    lua_register(L, "Connect",         connect);
-    lua_register(L, "ConnectAll",      connect_streams);
-    lua_register(L, "Same",            is_same_ptr);
-    lua_register(L, "Bridge",          add_bridge);
-    lua_register(L, "Prices",          add_prices);
-    lua_register(L, "Objective",       add_objective);
-    lua_register(L, "SetObjective",    set_objective);
+    lua_register(L, "Model",             create_model);
+    lua_register(L, "Flowsheet",         flowsheet);
+    lua_register(L, "Streams",           add_streams);
+    lua_register(L, "Eval",              eval_expr);
+    lua_register(L, "Init",              initialize);
+    lua_register(L, "ShowModel",         show_summary);
+    lua_register(L, "ShowVariables",     show_variables);
+    lua_register(L, "ShowConstraints",   show_constraints);
+    lua_register(L, "ShowJacobian",      show_jacobian);
+    lua_register(L, "ShowHessian",       show_hessian);
+    lua_register(L, "ShowConnections",   show_connections);
+    lua_register(L, "ShowPrices",        show_prices);
+    lua_register(L, "ShowObjective",     show_objective);
+    lua_register(L, "ShowObjGrad",       show_obj_grad);
+    lua_register(L, "Val",               get_value);
+    lua_register(L, "BaseVal",           get_base_value);
+    lua_register(L, "LB",                get_lower);
+    lua_register(L, "UB",                get_upper);
+    lua_register(L, "Spec",              get_spec);
+    lua_register(L, "Var",               get_var);
+    lua_register(L, "Unit",              get_unit);
+    lua_register(L, "ChangeUnit",        change_unit);
+    lua_register(L, "SetValue",          set_value);
+    lua_register(L, "SolverOption",      set_solver_option);
+    lua_register(L, "Solve",             solve_model);
+    lua_register(L, "InitSolver",        initialize_solver);
+    lua_register(L, "EvalConstraints",   eval_constraints);
+    lua_register(L, "EvalJacobian",      eval_jacobian);
+    lua_register(L, "EvalHessian",       eval_hessian);
+    lua_register(L, "EvalObjective",     eval_objective);
+    lua_register(L, "EvalObjGrad",       eval_obj_grad);
+    lua_register(L, "Variables",         add_variables);
+    lua_register(L, "Constraints",       add_constraints);
+    lua_register(L, "JacobianNZs",       add_jacobian_nzs);
+    lua_register(L, "Connect",           connect);
+    lua_register(L, "ConnectAll",        connect_streams);
+    lua_register(L, "Same",              is_same_ptr);
+    lua_register(L, "Bridge",            add_bridge);
+    lua_register(L, "Prices",            add_prices);
+    lua_register(L, "Objective",         add_objective);
+    lua_register(L, "SetObjective",      set_objective);
 
-    lua_register(L, "Mixer",           add_Mixer);
-    lua_register(L, "Splitter",        add_Splitter);
-    lua_register(L, "Separator",       add_Separator);
-    lua_register(L, "YieldReactor",    add_YieldReactor);
-    lua_register(L, "Calc",            add_Calc);
+    lua_register(L, "Mixer",             add_Mixer);
+    lua_register(L, "Splitter",          add_Splitter);
+    lua_register(L, "Separator",         add_Separator);
+    lua_register(L, "YieldReactor",      add_YieldReactor);
+    lua_register(L, "MultiYieldReactor", add_MultiYieldReactor);
+    lua_register(L, "Calc",              add_Calc);
 
     return L;
 }

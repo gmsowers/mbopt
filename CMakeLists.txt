@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.30)
 project(test_mbopt LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set(CMAKE_OSX_SYSROOT /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk CACHE FILEPATH "SDK dir" FORCE)
@@ -15,6 +15,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         src/Splitter.cpp
         src/Separator.cpp
         src/YieldReactor.cpp
+        src/MultiYieldReactor.cpp
         )
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)
