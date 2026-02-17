@@ -9,6 +9,7 @@
 #include "Separator.hpp"
 #include "YieldReactor.hpp"
 #include "MultiYieldReactor.hpp"
+#include "StoicReactor.hpp"
 
 static unique_ptr<Model> M;
 static Flowsheet*        FS;
@@ -177,8 +178,13 @@ int delegate(lua_State* L, Delegate_Func_T f) {
                 } else if (tp->subtype_idx == typeid(YieldReactor)) {
                     auto p = static_cast<YieldReactor*>(tp->ptr);
                     if (p) f(p);
+                } else if (tp->subtype_idx == typeid(MultiYieldReactor)) {
+                    auto p = static_cast<MultiYieldReactor*>(tp->ptr);
+                    if (p) f(p);
+                } else if (tp->subtype_idx == typeid(StoicReactor)) {
+                    auto p = static_cast<StoicReactor*>(tp->ptr);
+                    if (p) f(p);
                 }
-                // TODO: add remaining Blocks.
             }
             else if (tp->type_idx == typeid(Calc)) {
                 auto p = static_cast<Calc*>(tp->ptr);
@@ -691,7 +697,7 @@ int add_YieldReactor(lua_State* L) {
 int add_MultiYieldReactor(lua_State* L) {
     string blk_name;
     vector<Stream*> inlets, outlets;
-    start_Block<YieldReactor>(L, "YieldReactor", blk_name, inlets, outlets);
+    start_Block<MultiYieldReactor>(L, "MultiYieldReactor", blk_name, inlets, outlets);
 
     const string msg {"MultiYieldReactor: expected "};
 
@@ -712,7 +718,91 @@ int add_MultiYieldReactor(lua_State* L) {
         check(L, !feed_names[i].empty(), format("{}argument {} to be a non-empty string.", msg, j));
     }
 
-    return finish_Block<MultiYieldReactor, vector<string>&, const string&>(L, blk_name, inlets, outlets, feed_names, reactor_name);
+    return finish_Block<MultiYieldReactor, const string&, const vector<string>&>(L, blk_name, inlets, outlets, reactor_name, feed_names);
+}
+
+int add_StoicReactor(lua_State* L) {
+    string blk_name;
+    vector<Stream*> inlets, outlets;
+    start_Block<StoicReactor>(L, "StoicReactor", blk_name, inlets, outlets);
+
+    const string msg {"StoicReactor: expected "};
+
+    auto u_mw_def = M->unit_set.get_default_unit("molewt");
+    Unit* u_mw;
+
+    // Get table of molecular weights.
+    check(L, lua_istable(L, 4) && lua_rawlen(L, 4) > 0,
+        msg + "argument 4 to be a table of at least one molecular weight specification.");
+    auto n_mw = lua_rawlen(L, 4);
+    unordered_map<string, Quantity> mw {};
+    for (lua_Unsigned i = 1; i <= n_mw; i++) {
+        check(L, lua_rawgeti(L, 4, i) == LUA_TTABLE,
+            format("{}element {} of argument 4 to be a table.", msg, i)); // Push elem i, e.g., {"H2", 2.0}
+        int n_elem = lua_rawlen(L, -1);
+        check(L, n_elem == 2 || n_elem == 3,
+            format("{}element {} of argument 4 to look like {{string, number, <Unit>}}.", msg, i));
+        string comp_name = get_string_elem(L, 1,
+            format("{}element {} of argument 4 to look like {{string, number, <Unit>}}.", msg, i));
+        double mw_val = get_double_elem(L, 2,
+            format("{}element {} of argument 4 to look like {{string, number, <Unit>}}.", msg, i));
+        if (n_elem == 3) {
+            if (lua_rawgeti(L, -1, 3) == LUA_TSTRING) {
+                string u_str = lua_tostring(L, -1);
+                u_mw = M->unit_set.units[u_str].get();
+                lua_pop(L, 1);
+                check(L, u_mw, 
+                    format("{}element {} of argument 4 to look like {{string, number, <Unit>}}.", msg, i));
+            } else {
+                u_mw = get_typed_ptr_elem<Unit>(L, 3,
+                    format("{}element {} of argument 4 to look like {{string, number, <Unit>}}.", msg, i));
+            }
+        }
+        else
+            u_mw = u_mw_def;
+
+        mw[comp_name] = {mw_val, u_mw};
+        lua_pop(L, 1);   // Pop elem i
+    }
+
+    // Get table of stoichiometric coefficients.
+    check(L, lua_istable(L, 5) && lua_rawlen(L, 5) > 0,
+        msg + "argument 5 to be a table of stoichiometric coefficients.");
+    auto n_rx = lua_rawlen(L, 5);
+    vector<unordered_map<string, double>> stoic_coef(n_rx);
+    for (lua_Unsigned i = 1; i <= n_rx; i++) {
+        check(L, lua_rawgeti(L, 5, i) == LUA_TTABLE,     // Push reaction i, e.g., { {"H2", -1.0}, {"C2H2", -1.0}, {"C2H4", 1.0} }
+            format("{}element {} of argument 5 to look like {{{{string, number}}, {{string, number}}, etc.}}.", msg, i));
+        int n_coef = lua_rawlen(L, -1);
+        if (n_coef == 0) continue;
+        for (lua_Unsigned j = 1; j <= n_coef; j++) {
+            check(L, lua_rawgeti(L, -1, j) == LUA_TTABLE,   // Push stoic coeff j, e.g., {"H2", -1.0}
+                format("{}element {} of argument 5 to look like {{{{string, number}}, {{string, number}}, etc.}}.", msg, i));
+            string comp_name = get_string_elem(L, 1,
+                format("{}element {} of argument 5 to look like {{{{string, number}}, {{string, number}}, etc.}}.", msg, i));
+            double coef = get_double_elem(L, 2,
+                format("{}element {} of argument 5 to look like {{{{string, number}}, {{string, number}}, etc.}}.", msg, i));
+            lua_pop(L, 1);   // Pop stoic coef j
+            stoic_coef[i - 1][comp_name] = coef;
+        }
+        lua_pop(L, 1);  // Pop reaction i
+    }
+    
+    // Get table of conversion specs.
+    check(L, lua_istable(L, 6) && lua_rawlen(L, 6) > 0,
+        msg + "argument 6 to be a table of at least one conversion specification.");
+    auto n_keys = lua_rawlen(L, 6);
+    check(L, n_keys == n_rx, 
+        format("{}{} conversion specifications, got {}.", msg, n_rx, n_keys));
+    vector<string> conversion_keys(n_keys);
+    for (lua_Unsigned i = 1; i <= n_keys; i++)
+        conversion_keys[i - 1] = get_string_elem(L, i,
+            msg + "conversion specification to be a component name (a string).");
+
+    return finish_Block<StoicReactor,
+                        const unordered_map<string, Quantity>&,
+                        const vector<unordered_map<string, double>>&,
+                        const vector<string>&>(L, blk_name, inlets, outlets, mw, stoic_coef, conversion_keys);
 }
 
 int add_Calc(lua_State* L) {
@@ -1221,6 +1311,7 @@ lua_State* start_lua() {
     lua_register(L, "Separator",         add_Separator);
     lua_register(L, "YieldReactor",      add_YieldReactor);
     lua_register(L, "MultiYieldReactor", add_MultiYieldReactor);
+    lua_register(L, "StoicReactor",      add_StoicReactor);
     lua_register(L, "Calc",              add_Calc);
 
     return L;

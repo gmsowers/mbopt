@@ -16,6 +16,7 @@ add_executable(${CMAKE_PROJECT_NAME}
         src/Separator.cpp
         src/YieldReactor.cpp
         src/MultiYieldReactor.cpp
+        src/StoicReactor.cpp
         )
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)

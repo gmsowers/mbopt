@@ -1,19 +1,18 @@
-#include <iostream>
 #include <cassert>
 #include "MultiYieldReactor.hpp"
 
-MultiYieldReactor::MultiYieldReactor(string_view       name_,
-                                     Flowsheet*        fs_,
-                                     vector<Stream*>&& inlets_,
-                                     vector<Stream*>&& outlets_,
-                                     vector<string>&   feed_names_,
-                                     const string&     reactor_name
+MultiYieldReactor::MultiYieldReactor(string_view           name_,
+                                     Flowsheet*            fs_,
+                                     vector<Stream*>&&     inlets_,
+                                     vector<Stream*>&&     outlets_,
+                                     const string&         reactor_name,
+                                     const vector<string>& feed_names_
                                     ) :
-                                feed_names {feed_names_},
                                 Block(name_,
                                       fs_,
                                       std::move(inlets_),
-                                      std::move(outlets_))
+                                      std::move(outlets_)),
+                                feed_names {feed_names_}
 {
     assert(inlets.size() == outlets.size());
     assert(feed_names.size() == inlets.size());
@@ -106,7 +105,7 @@ MultiYieldReactor::MultiYieldReactor(string_view       name_,
     }
     
     // Total feed mass flow rate and an equation to calculate it.
-    //    e.g., sum(rx.Si.mass for Si in inlet streams) - rx.total_feed_mass == 0
+    //    e.g., sum(rx1.Si.mass for Si in inlet streams) - rx1.total_feed_mass == 0
     auto u_massflow = m->unit_set.get_default_unit("massflow");
     x.push_back(total_feed_mass = m->add_var(prefix + "total_feed_mass", u_massflow));
     auto eq = m->add_constraint(prefix + "total_feed_mass_calc");
@@ -116,7 +115,7 @@ MultiYieldReactor::MultiYieldReactor(string_view       name_,
     J.push_back(m->add_J_NZ(eq, total_feed_mass));
 
     // Make the n_*_rx and feed_rate variables and the equations relating them.
-    //   e.g., rx.n_feed1_rx * rx.feed1_rate - rx.in1.mass == 0
+    //   e.g., rx1.n_feed1_rx * rx1.feed1_rate - rx1.in1.mass == 0
     auto u_count = m->unit_set.get_default_unit("count");
     n_rx.resize(n_feeds);
     feed_rates.resize(n_feeds);
@@ -124,7 +123,7 @@ MultiYieldReactor::MultiYieldReactor(string_view       name_,
         x.push_back(n_rx[i] = m->add_var(prefix + feed_names[i] + "_n_" + reactor_name, u_count));
         x.push_back(feed_rates[i] = m->add_var(prefix + feed_names[i] + "_feed_rate", u_massflow));
         feed_rates[i]->fix();
-        auto eq = m->add_constraint(prefix + feed_names[i] + "_total_mass_calc");
+        eq = m->add_constraint(prefix + feed_names[i] + "_total_mass_calc");
         g.push_back(eq);
         J.push_back(m->add_J_NZ(eq, n_rx[i]));
         J.push_back(m->add_J_NZ(eq, feed_rates[i]));
@@ -133,7 +132,7 @@ MultiYieldReactor::MultiYieldReactor(string_view       name_,
     }
 
     // Make a variable and equation for totaling n_feedi_reactors,
-    //   e.g., sum(n_feedi_reactor) - n_reactor == 0
+    //   e.g., sum(rx1.n_feedi_reactor) - rx1.n_reactor == 0
     n_total_rx = m->add_var(prefix + "n_" + reactor_name, u_count);
     eq = m->add_constraint(prefix + "total_" + reactor_name + "_calc");
     g.push_back(eq);
@@ -223,7 +222,7 @@ void MultiYieldReactor::eval_constraints()
     auto ic = 0;
     const auto n_feeds = inlets.size();
 
-    // Total mass flow definition for inlet and outlet streams, \sum_{Cj in comps}(sep1.Si.mass_Cj) - rx1.Si.mass == 0,
+    // Total mass flow definition for inlet and outlet streams, \sum_{Cj in comps}(rx1.Si.mass_Cj) - rx1.Si.mass == 0,
     //     for Si in streams, Cj in comps.
     for (const auto& sin : inlets) {
         *g[ic] = 0.0;
@@ -238,7 +237,7 @@ void MultiYieldReactor::eval_constraints()
         *g[ic++] -= *x_strm[sout].total_mass;
     }
 
-    // Mass fraction definitions, (rx1.Si.mass * rx11.Si.massfrac_Cj) - rx1.Si.mass_Cj == 0
+    // Mass fraction definitions, (rx1.Si.mass * rx1.Si.massfrac_Cj) - rx1.Si.mass_Cj == 0
     //    for Si in inlet and outlet streams, Cj in comps.
     for (const auto& sin : inlets)
         for (const auto& c : sin->comps)
@@ -270,19 +269,19 @@ void MultiYieldReactor::eval_constraints()
     }
 
     // Equation to calculate the total feed mass flow rate,
-    //    e.g., sum(rx.Si.mass for Si in inlet streams) - rx.total_feed_mass == 0
+    //    e.g., sum(rx1.Si.mass for Si in inlet streams) - rx1.total_feed_mass == 0
     *g[ic] = 0.0;
     for (size_t i = 0; i < n_feeds; i++)
         *g[ic] += *x_strm[inlets[i]].total_mass;
     *g[ic++] -= *total_feed_mass;
 
     // Equations relating the n_*_rx and feed_rate variables,
-    //   e.g., rx.n_feed1_rx * rx.feed1_rate - rx.in1.mass == 0
+    //   e.g., rx1.n_feed1_rx * rx1.feed1_rate - rx1.in1.mass == 0
     for (size_t i = 0; i < n_feeds; i++)
         *g[ic++] = *n_rx[i] * *feed_rates[i] - *x_strm[inlets[i]].total_mass;
 
     // Equation for totaling n_feedi_reactors,
-    //   e.g., sum(n_feedi_reactor) - n_reactor == 0
+    //   e.g., sum(rx1.n_feedi_reactor) - rx1.n_reactor == 0
     *g[ic] = 0.0;
     for (size_t i = 0; i < n_feeds; i++)
         *g[ic] += *n_rx[i];
@@ -348,13 +347,13 @@ void MultiYieldReactor::eval_jacobian() {
                 *J[ic++] = 1.0;
 
     // Equation to calculate the total feed mass flow rate,
-    //    e.g., sum(rx.Si.mass for Si in inlet streams) - rx.total_feed_mass == 0
+    //    e.g., sum(rx1.Si.mass for Si in inlet streams) - rx1.total_feed_mass == 0
     for (size_t i = 0; i < n_feeds; i++)
         *J[ic++] = 1.0;
     *J[ic++] = -1.0;
 
     // Equations relating the n_*_rx and feed_rate variables,
-    //   e.g., rx.n_feed1_rx * rx.feed1_rate - rx.in1.mass == 0
+    //   e.g., rx1.n_feed1_rx * rx1.feed1_rate - rx1.in1.mass == 0
     for (size_t i = 0; i < n_feeds; i++) {
         *J[ic++] = *feed_rates[i];
         *J[ic++] = *n_rx[i];
@@ -392,7 +391,7 @@ void MultiYieldReactor::eval_hessian() {
                 *H[ic++] = 1.0;
 
     // Equations relating the n_*_rx and feed_rate variables,
-    //   e.g., rx.n_feed1_rx * rx.feed1_rate - rx.in1.mass == 0
+    //   e.g., rx1.n_feed1_rx * rx1.feed1_rate - rx1.in1.mass == 0
     for (size_t i = 0; i < n_feeds; i++)
         *H[ic++] = 1.0;
 

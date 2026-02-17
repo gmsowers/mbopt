@@ -139,6 +139,11 @@ public:
         value {value_},
         unit  {unit_}
     {}
+    Quantity(double      value_,
+             Unit*       unit_) :
+        value {value_},
+        unit  {unit_}
+    {}
 
     virtual double convert_to_base() const
         {return value * unit->ratio + unit->offset;}

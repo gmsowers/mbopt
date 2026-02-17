@@ -75,7 +75,7 @@ YieldReactor::YieldReactor(string_view       name_,
     }
 
     // Equations to sum the yields to one for each inlet component,
-    //   e.g., sum(rx_y_cOut_from_cIn for cIn in inlet.comps) - 1 == 0
+    //   e.g., sum(rx1.y_cOut_from_cIn for cIn in inlet.comps) - 1 == 0
     for (const auto& c_in : sin->comps) {
         eq = m->add_constraint(prefix + c_in + "_yield_sum");
         g.push_back(eq);
@@ -143,7 +143,7 @@ void YieldReactor::eval_constraints()
     const auto& sout = outlets[0];
     auto ic = 0;
 
-    // Total mass flow definition for inlet and outlet streams, \sum_{Cj in comps}(sep1.Si.mass_Cj) - sep1.Si.mass == 0,
+    // Total mass flow definition for inlet and outlet streams, \sum_{Cj in comps}(rx1.Si.mass_Cj) - rx1.Si.mass == 0,
     //     for Si in streams, Cj in comps.
     *g[ic] = 0.0;
     for (const auto& c : sin->comps)
@@ -155,7 +155,7 @@ void YieldReactor::eval_constraints()
         *g[ic] += *x_strm[sout].mass.at(c);
     *g[ic++] -= *x_strm[sout].total_mass;
 
-    // Mass fraction definitions, (sep1.Si.mass * sep1.Si.massfrac_Cj) - sep1.Si.mass_Cj == 0
+    // Mass fraction definitions, (rx1.Si.mass * rx1.Si.massfrac_Cj) - rx1.Si.mass_Cj == 0
     //    for Si in inlet and outlet streams, Cj in comps.
     for (const auto& c : sin->comps)
         *g[ic++] = *x_strm[sin].total_mass * *x_strm[sin].massfrac[c] - *x_strm[sin].mass[c];
@@ -172,7 +172,7 @@ void YieldReactor::eval_constraints()
     }
 
     // Equations to sum the yields to one for each inlet component,
-    //   e.g., sum(rx_y_cOut_from_cIn for cIn in inlet.comps) - 1 == 0
+    //   e.g., sum(rx1.y_cOut_from_cIn for cIn in inlet.comps) - 1 == 0
     for (const auto& c_in : sin->comps) {
         *g[ic] = 0.0;
         for (const auto& c_out : sout->comps)
@@ -189,7 +189,7 @@ void YieldReactor::eval_jacobian() {
     const auto& sout = outlets[0];
     auto ic = 0;
 
-    // Total mass flow definition for inlet and outlet streams, \sum_{Cj in comps}(sep1.Si.mass_Cj) - sep1.Si.mass == 0,
+    // Total mass flow definition for inlet and outlet streams, \sum_{Cj in comps}(rx1.Si.mass_Cj) - rx1.Si.mass == 0,
     //     for Si in streams, Cj in comps.
     for (size_t i = 0; i < sin->comps.size(); i++)
         *J[ic++] = 1.0;
@@ -198,7 +198,7 @@ void YieldReactor::eval_jacobian() {
         *J[ic++] = 1.0;
     *J[ic++] = -1.0;
 
-    // Mass fraction definitions, (sep1.Si.mass * sep1.Si.massfrac_Cj) - sep1.Si.mass_Cj == 0
+    // Mass fraction definitions, (rx1.Si.mass * rx1.Si.massfrac_Cj) - rx1.Si.mass_Cj == 0
     //    for Si in inlet and outlet streams, Cj in comps.
     for (const auto& c : sin->comps) {
         *J[ic++] = *x_strm[sin].massfrac.at(c);
@@ -222,7 +222,7 @@ void YieldReactor::eval_jacobian() {
     }
 
     // Equations to sum the yields to one for each inlet component,
-    //   e.g., sum(rx_y_cOut_from_cIn for cIn in inlet.comps) - 1 == 0
+    //   e.g., sum(rx1.y_cOut_from_cIn for cIn in inlet.comps) - 1 == 0
     for (size_t i = 0; i < sin->comps.size(); i++)
         for (size_t j = 0; j < sout->comps.size(); j++)
             *J[ic++] = 1.0;
@@ -236,7 +236,7 @@ void YieldReactor::eval_hessian() {
     const auto& sout = outlets[0];
     auto ic = 0;
 
-    // Mass fraction definitions, (sep1.Si.mass * sep1.Si.massfrac_Cj) - sep1.Si.mass_Cj == 0,
+    // Mass fraction definitions, (rx1.Si.mass * rx1.Si.massfrac_Cj) - rx1.Si.mass_Cj == 0,
     //    for Si in inlet and outlet streams, Cj in comps.
     for (size_t i = 0; i < sin->comps.size(); i++)
         *H[ic++] = 1.0;
