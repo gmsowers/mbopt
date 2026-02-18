@@ -1,8 +1,14 @@
 #include <iostream>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include "scripter.hpp"
 
 int main(int argc, const char *argv[])
 {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif
     lua_State* L = start_lua();
     if (!L) {
         std::cerr << "Failed to start Lua\n";

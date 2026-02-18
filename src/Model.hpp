@@ -187,7 +187,7 @@ public:
     bool is_free()  const {return (spec == VariableSpec::Free);}
 
     string to_str() const
-        {return format("|{}|{:32}|{}|{}|{}|{}|{:8}|", str(ix), name, str(spec), str(value),
+        {return format("│{}│{:32}│{}│{}│{}│{}│{:8}│", str(ix), name, str(spec), str(value),
             str(lower), str(upper), unit->str);}
 
 };
@@ -209,7 +209,7 @@ struct Constraint
     Constraint& operator-=(const double& val) {value -= val; return *this;}
 
     string to_str() const
-        {return format("|{}|{:32}|{}|", str(ix), name, str(value));}
+        {return format("│{}│{:32}│{}│", str(ix), name, str(value));}
 
 };
 
@@ -229,7 +229,7 @@ struct JacobianNZ
     {}
 
     string to_str() const
-    {return format("|{}|{}|{}|{:32}|{:32}|{}|", str(ix), str(con->ix), str(var->ix),
+    {return format("│{}│{}│{}│{:32}│{:32}│{}│", str(ix), str(con->ix), str(var->ix),
         con->name, var->name, str(value));}
 
     JacobianNZ& operator=(const double& val) {value = val; return *this;}
@@ -253,7 +253,7 @@ struct HessianNZ
         var2 {var2_} {}
 
     string to_str() const
-        {return format("|{}|{}|{}|{}|{:32}|{:32}|{:32}|{}|", str(ix), str(con->ix), str(var1->ix),
+        {return format("│{}│{}│{}│{}│{:32}│{:32}│{:32}│{}│", str(ix), str(con->ix), str(var1->ix),
             str(var2->ix), con->name, var1->name, var2->name, str(value));}
 
     HessianNZ& operator=(const double& val) {value = val; return *this;}
@@ -396,7 +396,7 @@ struct Connection
     JacobianNZ* jnz2 {};
 
     string to_str() const {
-        return format("|{}|{}|{}|{:32}|{:32}|{}|", str(eq->ix), str(var1->ix),
+        return format("│{}│{}│{}│{:32}│{:32}│{}│", str(eq->ix), str(var1->ix),
             str(var2->ix), var1->name, var2->name, str(eq->value));
     }
 
@@ -534,7 +534,7 @@ public:
     {}
 
     string to_str() const {
-        return format("|{:32}|{}|{:8}|", name, str(value), unit->str);
+        return format("│{:32}│{}│{:8}│", name, str(value), unit->str);
     }
 
 };
@@ -568,7 +568,7 @@ public:
     }
 
     string to_str() const {
-        return format("|{:24}|{:32}|{:24}|{}|{:8}|",
+        return format("│{:24}│{:32}│{:24}│{}│{:8}│",
             name, var->name, price->name, str(value), unit->str);
     }
 
@@ -606,7 +606,7 @@ public:
     void   eval_grad();
 
     string to_str() const {
-        return format("|{:>24}|{:32}|{:24}|{}|{:8}|",
+        return format("│{:>24}│{:32}│{:24}│{}│{:8}│",
             name, "", "", str(value), unit->str);
     }
 

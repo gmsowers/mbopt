@@ -1,7 +1,7 @@
 #include <algorithm>
 #include <cassert>
-#include "Model.hpp"
 #include <ranges>
+#include "Model.hpp"
 
 vector<string> operator+(const vector<string>& c1, const vector<string>& c2)
 {
@@ -96,43 +96,75 @@ Stream* Flowsheet::add_stream(const string&  name_,
 }
 
 char const* var_header = R"(
-|Index|              Name              |Fix|     Value    |     Lower    |     Upper    |  Unit  |
-|-----|--------------------------------|---|--------------|--------------|--------------|--------|
+┌─────┬────────────────────────────────┬───┬──────────────┬──────────────┬──────────────┬────────┐
+│Index│              Name              │Fix│     Value    │     Lower    │     Upper    │  Unit  │
+├─────┼────────────────────────────────┼───┼──────────────┼──────────────┼──────────────┼────────┤
+)";
+char const* var_footer =
+R"(└─────┴────────────────────────────────┴───┴──────────────┴──────────────┴──────────────┴────────┘
 )";
 
 char const* con_header = R"(
-|Index|              Name              |     Value    |
-|-----|--------------------------------|--------------|
+┌─────┬────────────────────────────────┬──────────────┐
+│Index│              Name              │     Value    │
+├─────┼────────────────────────────────┼──────────────┤
+)";
+char const* con_footer =
+R"(└─────┴────────────────────────────────┴──────────────┘
 )";
 
 char const* jac_header = R"(
-|Index|  Eq | Var |             Equation           |            Variable            |    Value     |
-|-----|-----|-----|--------------------------------|--------------------------------|--------------|
+┌─────┬─────┬─────┬────────────────────────────────┬────────────────────────────────┬──────────────┐
+│Index│  Eq │ Var │             Equation           │            Variable            │    Value     │
+├─────┼─────┼─────┼────────────────────────────────┼────────────────────────────────┼──────────────┤
+)";
+char const* jac_footer =
+R"(└─────┴─────┴─────┴────────────────────────────────┴────────────────────────────────┴──────────────┘
 )";
 
 char const* hess_header = R"(
-|Index|  Eq | Var1| Var2|             Equation           |            Variable 1          |            Variable 2          |    Value     |
-|-----|-----|-----|-----|--------------------------------|--------------------------------|--------------------------------|--------------|
+┌─────┬─────┬─────┬─────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┬──────────────┐
+│Index│  Eq │ Var1│ Var2│             Equation           │            Variable 1          │            Variable 2          │    Value     │
+├─────┼─────┼─────┼─────┼────────────────────────────────┼────────────────────────────────┼────────────────────────────────┼──────────────┤
+)";
+char const* hess_footer =
+R"(└─────┴─────┴─────┴─────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴──────────────┘
 )";
 
 char const* conn_header = R"(
-|Index| Var1| Var2|            Variable 1          |            Variable 2          |    Value     |
-|-----|-----|-----|--------------------------------|--------------------------------|--------------|
+┌─────┬─────┬─────┬────────────────────────────────┬────────────────────────────────┬──────────────┐
+│Index│ Var1│ Var2│            Variable 1          │            Variable 2          │    Value     │
+├─────┼─────┼─────┼────────────────────────────────┼────────────────────────────────┼──────────────┤
+)";
+char const* conn_footer =
+R"(└─────┴─────┴─────┴────────────────────────────────┴────────────────────────────────┴──────────────┘
 )";
 
 char const* price_header = R"(
-|              Name              |     Value    |  Unit  |
-|--------------------------------|--------------|--------|
+┌────────────────────────────────┬──────────────┬────────┐
+│              Name              │     Value    │  Unit  │
+├────────────────────────────────┼──────────────┼────────┤
+)";
+char const* price_footer =
+R"(└────────────────────────────────┴──────────────┴────────┘
 )";
 
 char const* obj_header = R"(
-|          Term          |            Variable            |          Price         |    Value     |  Unit  |
-|------------------------|--------------------------------|------------------------|--------------|--------|
+┌────────────────────────┬────────────────────────────────┬────────────────────────┬──────────────┬────────┐
+│          Term          │            Variable            │          Price         │    Value     │  Unit  │
+├────────────────────────┼────────────────────────────────┼────────────────────────┼──────────────┼────────┤
+)";
+char const* obj_footer =
+R"(└────────────────────────┴────────────────────────────────┴────────────────────────┴──────────────┴────────┘
 )";
 
 char const* obj_grad_header = R"(
-|Index|            Variable            |    Value     |
-|-----|--------------------------------|--------------|
+┌─────┬────────────────────────────────┬──────────────┐
+│Index│            Variable            │    Value     │
+├─────┼────────────────────────────────┼──────────────┤
+)";
+char const* obj_grad_footer =
+R"(└─────┴────────────────────────────────┴──────────────┘
 )";
 
 //---------------------------------------------------------
@@ -192,7 +224,8 @@ void Block::show_variables(ostream& os) const {
         os << *var << '\n';
         count++;
     }
-    os << count << " Variable" << (count > 1 ? "s" : "") << " shown\n";
+    os << var_footer;
+    os << count << " Variable" << (count > 1 ? "s" : "") << " shown\n\n";
 }
 
 void Block::show_constraints(ostream& os) const {
@@ -202,7 +235,8 @@ void Block::show_constraints(ostream& os) const {
         os << *con << '\n';
         count++;
     }
-    os << count << " Constraint" << (count > 1 ? "s" : "") << " shown\n";
+    os << con_footer;
+    os << count << " Constraint" << (count > 1 ? "s" : "") << " shown\n\n";
 }
 
 void Block::show_jacobian(ostream& os) const {
@@ -212,7 +246,8 @@ void Block::show_jacobian(ostream& os) const {
         os << *jnz << '\n';
         count++;
     }
-    os << count << " Jacobian NZ" << (count > 1 ? "s" : "") << " shown\n";
+    os << jac_footer;
+    os << count << " Jacobian NZ" << (count > 1 ? "s" : "") << " shown\n\n";
 }
 
 void Block::show_hessian(ostream& os) const {
@@ -222,7 +257,8 @@ void Block::show_hessian(ostream& os) const {
         os << *hnz << '\n';
         count++;
     }
-    os << count << " Hessian NZ" << (count > 1 ? "s" : "") << " shown\n";
+    os << hess_footer;
+    os << count << " Hessian NZ" << (count > 1 ? "s" : "") << " shown\n\n";
 }
 
 //---------------------------------------------------------
@@ -242,7 +278,8 @@ void Calc::show_variables(ostream& os) const {
         os << *var << '\n';
         count++;
     }
-    os << count << " Variable" << (count > 1 ? "s" : "") << " shown\n";
+    os << var_footer;
+    os << count << " Variable" << (count > 1 ? "s" : "") << " shown\n\n";
 }
 
 void Calc::show_constraints(ostream& os) const {
@@ -252,7 +289,8 @@ void Calc::show_constraints(ostream& os) const {
         os << *con << '\n';
         count++;
     }
-    os << count << " Constraint" << (count > 1 ? "s" : "") << " shown\n";
+    os << con_footer;
+    os << count << " Constraint" << (count > 1 ? "s" : "") << " shown\n\n";
 }
 
 void Calc::show_jacobian(ostream& os) const {
@@ -262,7 +300,8 @@ void Calc::show_jacobian(ostream& os) const {
         os << *jnz << '\n';
         count++;
     }
-    os << count << " Jacobian NZ" << (count > 1 ? "s" : "") << " shown\n";
+    os << jac_footer;
+    os << count << " Jacobian NZ" << (count > 1 ? "s" : "") << " shown\n\n";
 }
 
 void Calc::show_hessian(ostream& os) const {
@@ -272,7 +311,8 @@ void Calc::show_hessian(ostream& os) const {
         os << *hnz << '\n';
         count++;
     }
-    os << count << " Hessian NZ" << (count > 1 ? "s" : "") << " shown\n";
+    os << hess_footer;
+    os << count << " Hessian NZ" << (count > 1 ? "s" : "") << " shown\n\n";
 }
 
 //---------------------------------------------------------
@@ -419,7 +459,8 @@ void Model::show_variables(ostream& os) const {
         os << *var << '\n';
         count++;
     }
-    os << count << " Variable" << (count > 1 ? "s" : "") << " shown\n";
+    os << var_footer;
+    os << count << " Variable" << (count > 1 ? "s" : "") << " shown\n\n";
 }
 
 void Model::show_constraints(ostream& os) const {
@@ -429,7 +470,8 @@ void Model::show_constraints(ostream& os) const {
         count++;
         os << *con << '\n';
     }
-    os << count << " Constraint" << (count > 1 ? "s" : "") << " shown\n";
+    os << con_footer;
+    os << count << " Constraint" << (count > 1 ? "s" : "") << " shown\n\n";
 }
 
 void Model::show_jacobian(ostream& os) const {
@@ -439,7 +481,8 @@ void Model::show_jacobian(ostream& os) const {
         os << *jnz << '\n';
         count++;
     }
-    os << count << " Jacobian NZ" << (count > 1 ? "s" : "") << " shown\n";
+    os << jac_footer;
+    os << count << " Jacobian NZ" << (count > 1 ? "s" : "") << " shown\n\n";
 }
 
 void Model::show_hessian(ostream& os) const {
@@ -449,7 +492,8 @@ void Model::show_hessian(ostream& os) const {
         os << *hnz << '\n';
         count++;
     }
-    os << count << " Hessian NZ" << (count > 1 ? "s" : "") << " shown\n";
+    os << hess_footer;
+    os << count << " Hessian NZ" << (count > 1 ? "s" : "") << " shown\n\n";
 }
 
 void Model::show_connections(ostream& os) const {
@@ -459,7 +503,8 @@ void Model::show_connections(ostream& os) const {
         os << *conn << '\n';
         count++;
     }
-    os << count << " connection" << (count > 1 ? "s" : "") << " shown\n";
+    os << conn_footer;
+    os << count << " connection" << (count > 1 ? "s" : "") << " shown\n\n";
 }
 
 void Model::show_prices(ostream& os) const {
@@ -469,7 +514,8 @@ void Model::show_prices(ostream& os) const {
         os << *price << '\n';
         count++;
     }
-    os << count << " price" << (count > 1 ? "s" : "") << " shown\n";
+    os << price_footer;
+    os << count << " price" << (count > 1 ? "s" : "") << " shown\n\n";
 }
 
 void Model::show_objective_rec(Objective* obj_, ostream& os) const {
@@ -489,6 +535,7 @@ void Model::show_objective(Objective* obj_, ostream& os) const {
     os << "Objective: " << obj_->name << '\n';
     os << obj_header;
     show_objective_rec(obj_, os);
+    os << obj_footer << '\n';
 }
 
 void Model::show_obj_grad(ostream& os) const {
@@ -499,6 +546,7 @@ void Model::show_obj_grad(ostream& os) const {
         auto val = std::get<1>(g);
         os << format("|{}|{:32}|{}|\n", str(i), x_vec[i]->name, str(val));
     }
+    os << obj_grad_footer << '\n';
 }
 
 void Model::show_summary(ostream& os) const {
@@ -518,9 +566,9 @@ void Model::show_summary(ostream& os) const {
     os << "Number of Jacobian non-zeros = " << njnz    << '\n';
     os << "Number of Hessian non-zeros  = " << nhnz    << '\n';
     if (nDOF == 0)
-        os << "Model is square\n";
+        os << "Model is square\n\n";
     else
-        os << format("Model has {} degree{} of freedom\n", nDOF, (nDOF == 1 ? "" : "s"));
+        os << format("Model has {} degree{} of freedom\n\n", nDOF, (nDOF == 1 ? "" : "s"));
 
 }
 
@@ -731,5 +779,5 @@ string str(Ndouble nd) {
 }
 
 string str(VariableSpec spec) {
-    return spec == VariableSpec::Fixed ? " ==" : "   ";
+    return spec == VariableSpec::Fixed ? " = " : "   ";
 }
