@@ -93,7 +93,7 @@ Eval([[
 ]])
 
 Init()
-ShowVariables()
+WriteVariables()
 EvalConstraints()
 ShowConstraints()
 EvalJacobian()

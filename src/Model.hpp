@@ -22,6 +22,7 @@ using std::unique_ptr;
 using std::make_unique;
 using std::format;
 using std::ostream;
+using std::ofstream;
 using std::cout;
 using std::cerr;
 
@@ -332,7 +333,7 @@ public:
     void show_constraints(ostream& os = cout) const;
     void show_jacobian(ostream& os = cout)    const;
     void show_hessian(ostream& os = cout)     const;
-    void show_summary(ostream& os = cout)     const {}
+    void show_model(ostream& os = cout)       const {}
 
 private:
     void make_stream_variables(Stream* strm);
@@ -381,7 +382,7 @@ public:
     void show_constraints(ostream& os = cout) const;
     void show_jacobian(ostream& os = cout)    const;
     void show_hessian(ostream& os = cout)     const;
-    void show_summary(ostream& os = cout)     const {}
+    void show_model(ostream& os = cout)       const {}
 
 };
 
@@ -517,7 +518,7 @@ public:
     void eval_jacobian()    { eval([](const auto& ptr) { ptr->eval_jacobian();    }); }
     void eval_hessian()     { eval([](const auto& ptr) { ptr->eval_hessian();     }); }
 
-    void show_summary(ostream& os = cout) const {}
+    void show_model(ostream& os = cout) const {}
 
 };
 
@@ -682,11 +683,12 @@ public:
     void        show_jacobian(ostream& os = cout)    const;
     void        show_hessian(ostream& os = cout)     const;
     void        show_connections(ostream& os = cout) const;
-    void        show_summary(ostream& os = cout)     const;
+    void        show_model(ostream& os = cout)       const;
     void        show_prices(ostream& os = cout)      const;
     void        show_objective(Objective* obj_ = nullptr,
                                ostream&   os = cout) const;
     void        show_obj_grad(ostream& os = cout)    const;
+    void        write_variables(ostream& os = cout)  const;
 
     Variable*   var(const string& name_) const {
         return x_map.contains(name_) ? x_map.at(name_) : nullptr;

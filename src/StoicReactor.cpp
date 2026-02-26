@@ -169,7 +169,7 @@ void StoicReactor::initialize() {
     //    e.g., \sum_i(stoic_coef[i][Cj] * arx.extent_i) + arx.in.moles_Cj - arx.out.moles_Cj == 0 for i = 0, n_rx - 1,
     //              Cj in rx_comps.
     for (const auto& c : rx_comps) {
-        double mf = (inlet_moles.contains(c) ? *inlet_moles[c] : 0.0);
+        mf = (inlet_moles.contains(c) ? *inlet_moles[c] : 0.0);
         for (int i = 0; i < n_rx; i++)
             mf += (stoic_coef[i].contains(c) ? stoic_coef[i][c] : 0.0) * *extents[i];
         if (outlet_moles.contains(c)) outlet_moles[c]->convert_and_set(mf);
@@ -325,7 +325,7 @@ void StoicReactor::eval_jacobian() {
 
     // Inert components copy equations,
     //    e.g., arx.out.mass_co2 - arx.in.mass_co2 == 0
-    for (const auto& c : inert_comps) {
+    for (int i = 0; i < inert_comps.size(); i++) {
         *J[ic++] = 1.0;
         *J[ic++] = -1.0;
     }

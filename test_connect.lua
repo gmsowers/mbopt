@@ -118,7 +118,7 @@ n_test = n_test + 1
 print("After solve:\n")
 ShowVariables()
 
-Show(M)
+ShowModel(M)
 
 print(string.format("\nAll %d tests passed\n", n_test - 1))
 do return end

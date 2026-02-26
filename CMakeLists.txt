@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.30)
-project(test_mbopt LANGUAGES CXX)
+project(mbopt LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 
@@ -7,8 +7,8 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set(CMAKE_OSX_SYSROOT /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk CACHE FILEPATH "SDK dir" FORCE)
 endif()
 
-add_executable(${CMAKE_PROJECT_NAME}
-        src/test_mbopt.cpp
+add_executable(mbopt
+        src/main.cpp
         src/scripter.cpp
         src/Model.cpp
         src/Mixer.cpp
@@ -19,7 +19,20 @@ add_executable(${CMAKE_PROJECT_NAME}
         src/StoicReactor.cpp
         )
 
-target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)
+add_library(mboptlib SHARED
+        src/scripter.cpp
+        src/Model.cpp
+        src/Mixer.cpp
+        src/Splitter.cpp
+        src/Separator.cpp
+        src/YieldReactor.cpp
+        src/MultiYieldReactor.cpp
+        src/StoicReactor.cpp
+        )
+set_target_properties(mboptlib PROPERTIES PREFIX "")
+
+target_include_directories(mbopt PRIVATE src)
+target_include_directories(mboptlib PRIVATE src)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     set(IPOPT_DIR "$ENV{USERPROFILE}\\filen\\dev\\cpp\\ipopt")
@@ -34,7 +47,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE /opt/homebrew/include/coin-or /opt/homebrew/include/lua)
+    set_target_properties(mboptlib PROPERTIES SUFFIX ".so")
+    target_include_directories(mbopt PRIVATE /opt/homebrew/include/coin-or /opt/homebrew/include/lua)
+    target_include_directories(mboptlib PRIVATE /opt/homebrew/include/coin-or /opt/homebrew/include/lua)
     find_library(IPOPTLIB ipopt)
     find_library(LUALIB lua)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
@@ -42,7 +57,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     else()
         set(LIBC_PATH "")
     endif()
-    target_link_libraries(${CMAKE_PROJECT_NAME} ${IPOPTLIB} ${LUALIB} ${LIBC_PATH})
+    target_link_libraries(mbopt ${IPOPTLIB} ${LUALIB} ${LIBC_PATH})
+    target_link_libraries(mboptlib ${IPOPTLIB} ${LUALIB} ${LIBC_PATH})
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

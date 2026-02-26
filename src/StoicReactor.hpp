@@ -21,7 +21,7 @@ public:
 private:
     unordered_map<string, Quantity>       mw               {};
     vector<unordered_map<string, double>> stoic_coef       {};
-    int                                   n_rx             {0};
+    size_t                                n_rx             {0};
     vector<string>                        rx_comps         {},
                                           inert_comps      {};
     unordered_map<string, Variable*>      inlet_moles      {},

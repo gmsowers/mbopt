@@ -549,7 +549,7 @@ void Model::show_obj_grad(ostream& os) const {
     os << obj_grad_footer << '\n';
 }
 
-void Model::show_summary(ostream& os) const {
+void Model::show_model(ostream& os) const {
     auto nx = x_vec.size();
     auto mg = g_vec.size();
     int nfixed = 0;
@@ -559,18 +559,27 @@ void Model::show_summary(ostream& os) const {
     int nDOF = nfree - mg;
     int njnz = J.size();
     int nhnz = H.size();
-    os << "Number of equations          = " << mg      << '\n';
-    os << "Number of free variables     = " << nfree   << '\n';
-    os << "Number of fixed variables    = " << nfixed  << '\n';
-    os << "Number of variables          = " << nx      << '\n';
-    os << "Number of Jacobian non-zeros = " << njnz    << '\n';
-    os << "Number of Hessian non-zeros  = " << nhnz    << '\n';
+    os << "Model: " << name << '\n';
+    os << "  Number of equations          = " << mg      << '\n';
+    os << "  Number of free variables     = " << nfree   << '\n';
+    os << "  Number of fixed variables    = " << nfixed  << '\n';
+    os << "  Number of variables          = " << nx      << '\n';
+    os << "  Number of Jacobian non-zeros = " << njnz    << '\n';
+    os << "  Number of Hessian non-zeros  = " << nhnz    << '\n';
     if (nDOF == 0)
         os << "Model is square\n\n";
     else
         os << format("Model has {} degree{} of freedom\n\n", nDOF, (nDOF == 1 ? "" : "s"));
 
 }
+
+void Model::write_variables(ostream& os) const {
+    os << "Eval([[\n";
+    for (const auto& var : x_vec)
+        os << format("    {:32} = {}_{}\n", var->name, str(var->value), var->unit->str);
+    os << "]])\n";
+}
+
 
 bool Model::get_nlp_info(
     Index&          n,
