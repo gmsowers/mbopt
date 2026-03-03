@@ -11,6 +11,7 @@
 #include <memory>
 #include <variant>
 #include "IpIpoptApplication.hpp"
+#include "IpJournalist.hpp"
 
 constexpr double NO_BOUND = 1.0e20;
 
@@ -46,6 +47,8 @@ ostream& operator<<(ostream& os, const T& obj) {
 
 struct UnitKind;
 
+string str(double d);
+
 struct Unit
 {
     string    str    {};
@@ -63,6 +66,8 @@ struct Unit
         ratio  {ratio_},
         offset {offset_}
     {}
+
+    string to_str() const;
 };
 
 struct UnitKind
@@ -76,8 +81,8 @@ struct UnitKind
 
 struct UnitSet
 {
-    unordered_map<string, unique_ptr<UnitKind>> kinds {};
-    unordered_map<string, unique_ptr<Unit>>     units {};
+    std::map<string, unique_ptr<UnitKind>> kinds {};
+    std::map<string, unique_ptr<Unit>>     units {};
  
     UnitSet() = default;
 
@@ -105,6 +110,8 @@ struct UnitSet
     Unit* get_default_unit(const string& unit_kind_str) {
         return (kinds.contains(unit_kind_str) ? kinds[unit_kind_str]->default_unit : nullptr);
     }
+
+    void show_units(ostream& os = cout) const;
 };
 
 //---------------------------------------------------------
@@ -115,7 +122,6 @@ enum class VariableSpec { Fixed, Free };
 using Ndouble = std::optional<double>;
 
 string str(Index i);
-string str(double d);
 string str(Ndouble nd);
 string str(VariableSpec spec);
 
@@ -505,8 +511,7 @@ public:
     }
 
 private:
-    template <typename T>
-    void eval(T feval) {
+    void eval(auto feval) {
         for (const auto& blk : blocks)   feval(blk);
         for (const auto& clc : calcs)    feval(clc);
         for (const auto& fs  : children) feval(fs);
@@ -688,6 +693,9 @@ public:
     void        show_objective(Objective* obj_ = nullptr,
                                ostream&   os = cout) const;
     void        show_obj_grad(ostream& os = cout)    const;
+    void        show_units(ostream& os = cout)       const {
+        unit_set.show_units(os);
+    }
     void        write_variables(ostream& os = cout)  const;
 
     Variable*   var(const string& name_) const {

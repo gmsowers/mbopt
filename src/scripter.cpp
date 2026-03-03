@@ -156,8 +156,7 @@ int solve_model(lua_State* L) {
     return 1;
 }
 
-template <typename Delegate_Func_T>
-int delegate(lua_State* L, string_view f_name, Delegate_Func_T f) {
+int delegate(lua_State* L, string_view f_name, auto f) {
     checkM(L, format("{}: expected {}", f_name, errM));
     auto n_args = lua_gettop(L);
     if (n_args == 0) {
@@ -264,8 +263,7 @@ int set_solver_option(lua_State* L) {
     return 0;
 }
 
-template <typename Get_Attr_T>
-int get_variable_attr(lua_State* L, string_view f_name, Get_Attr_T get_attr) {
+int get_variable_attr(lua_State* L, string_view f_name, auto get_attr) {
     std::pair<Ndouble, string> res {std::nullopt, {}};
     checkM(L, format("{}: expected {}", f_name, errM));
     check(L, lua_gettop(L) == 1, format("{}: expected 1 argument.", f_name));
@@ -562,6 +560,20 @@ int show_obj_grad(lua_State* L) {
     return 0;
 }
 
+int show_units(lua_State* L) {
+    string const msg {"ShowUnits: expected "};
+    auto n_args = lua_gettop(L);
+    check(L, n_args <= 1, "0 or 1 argument.");
+    if (n_args == 0) {
+        checkM(L, msg + errM);
+        M->show_units(*OUT);
+        return 0;
+    }
+    auto unitset = get_typed_ptr<UnitSet>(L, 1, msg + "argument 1 to be a UnitSet.");
+    unitset->show_units(*OUT);
+    return 0;
+}
+
 int initialize(lua_State* L) {
     return delegate(L, "Init", [](auto* p) { p->initialize(); });
 }
@@ -695,7 +707,6 @@ int eval_expr(lua_State* L) {
     return 1;
 }
 
-template <typename T>
 void start_Block(lua_State* L, const string& blk_type, string& blk_name, vector<Stream*>& inlets, vector<Stream*>& outlets) {
     const string msg {blk_type + ": expected "};
     checkFS(L, msg + errFS);
@@ -745,7 +756,7 @@ template <typename T>
 int add_Block(lua_State* L, const string& blk_type) {
     string blk_name;
     vector<Stream*> inlets, outlets;
-    start_Block<T>(L, blk_type, blk_name, inlets, outlets);
+    start_Block(L, blk_type, blk_name, inlets, outlets);
     return finish_Block<T>(L, blk_name, inlets, outlets);
 }
 
@@ -764,14 +775,14 @@ int add_Separator(lua_State* L) {
 int add_YieldReactor(lua_State* L) {
     string blk_name;
     vector<Stream*> inlets, outlets;
-    start_Block<YieldReactor>(L, "YieldReactor", blk_name, inlets, outlets);
+    start_Block(L, "YieldReactor", blk_name, inlets, outlets);
     return finish_Block<YieldReactor>(L, blk_name, inlets, outlets);
 }
 
 int add_MultiYieldReactor(lua_State* L) {
     string blk_name;
     vector<Stream*> inlets, outlets;
-    start_Block<MultiYieldReactor>(L, "MultiYieldReactor", blk_name, inlets, outlets);
+    start_Block(L, "MultiYieldReactor", blk_name, inlets, outlets);
 
     const string msg {"MultiYieldReactor: expected "};
 
@@ -798,7 +809,7 @@ int add_MultiYieldReactor(lua_State* L) {
 int add_StoicReactor(lua_State* L) {
     string blk_name;
     vector<Stream*> inlets, outlets;
-    start_Block<StoicReactor>(L, "StoicReactor", blk_name, inlets, outlets);
+    start_Block(L, "StoicReactor", blk_name, inlets, outlets);
 
     const string msg {"StoicReactor: expected "};
 
@@ -1239,16 +1250,11 @@ int add_objective(lua_State* L) {
 
 int create_model(lua_State* L) {
     const string msg_expected {"Model: expected "};
-    const string msg_kinds {"Model: in the \"kinds\" table, expected "};
-    const string msg_units {"Model: in the \"units\" table, expected "};
     auto n_args = lua_gettop(L);
-    check(L, n_args == 4, format("{}4 arguments, got {}.", msg_expected, n_args));
+    check(L, n_args == 3, format("{}3 arguments, got {}.", msg_expected, n_args));
     check(L, lua_isstring(L, 1) && !lua_isnumber(L, 1), msg_expected + "argument 1 to be a string.");  // arg 1 is the model name
     check(L, lua_isstring(L, 2) && !lua_isnumber(L, 2), msg_expected + "argument 2 to be a string.");  // arg 2 is the index flowsheet name
-    check(L, lua_istable(L, 3),  msg_expected + "argument 3 to be a table.");  // arg 3 is a kinds table
-    check(L, lua_istable(L, 4),  msg_expected + "argument 4 to be a table.");  // arg 4 is a units table
-
-    UnitSet u {};
+    check(L, lua_isuserdata(L, 3),  msg_expected + "argument 3 to be a UnitSet.");  // arg 3 is a Unitset
 
     string name = lua_tostring(L, 1);   // Model name
     check(L, !name.empty(), msg_expected + "argument 1 to be a non-empty string.");
@@ -1256,9 +1262,32 @@ int create_model(lua_State* L) {
     string index_fs_name = lua_tostring(L, 2);  // Index Flowsheet name
     check(L, !index_fs_name.empty(), msg_expected + "argument 2 to be a non-empty string.");
 
+    auto u = get_typed_ptr<UnitSet>(L, 3, msg_expected + "argument 3 to be a UnitSet.");
+
+    M = make_unique<Model>(name, index_fs_name, std::move(*u));
+    delete u;
+    FS = M->index_fs.get();
+
+    push_pointer<Model>(L, M.get());
+    push_pointer<Flowsheet>(L, FS);
+
+    return 2;
+}
+
+int create_unitset(lua_State* L) {
+    const string msg_expected {"UnitSet: expected "};
+    const string msg_kinds {"UnitSet: in the kinds table, expected "};
+    const string msg_units {"UnitSet: in the units table, expected "};
+    auto n_args = lua_gettop(L);
+    check(L, n_args == 2, format("{}2 arguments, got {}.", msg_expected, n_args));
+    check(L, lua_istable(L, 1),  msg_expected + "argument 1 to be a table.");  // arg 1 is a kinds table
+    check(L, lua_istable(L, 2),  msg_expected + "argument 2 to be a table.");  // arg 2 is a units table
+
+    auto u {new UnitSet};
+
     // kinds table:
     lua_pushnil(L);                             // push a nil key to start
-    while (lua_next(L, 3) != 0) {               // pops the key, then pushes next key-value pair
+    while (lua_next(L, 1) != 0) {               // pops the key, then pushes next key-value pair
         string kind_str = lua_tostring(L, -2);  // key is kind_str
         check(L, lua_istable(L, -1), format("{}key \"{}\" to reference a table.", msg_kinds, kind_str)); // value is table with 1 or 2 strings
 
@@ -1272,40 +1301,38 @@ int create_model(lua_State* L) {
             format("{}element 2 in the \"{}\" definition to be a string.", msg_kinds, kind_str)) : base_unit_str); // element 2 (optional) is default_unit_str
 
         lua_pop(L, 1);  // pop the value (the {base_unit_str, default_unit_str} table)
-        u.add_kind(kind_str, base_unit_str, default_unit_str);
+        u->add_kind(kind_str, base_unit_str, default_unit_str);
     }
 
     // units table:
     lua_pushnil(L);                             // push a nil key to start
-    while (lua_next(L, 4) != 0) {               // pops the key, then pushes next key-value pair
+    while (lua_next(L, 2) != 0) {               // pops the key, then pushes next key-value pair
         string kind_str = lua_tostring(L, -2);  // key is kind_str
-        check(L, lua_istable(L, -1), format("{}key \"{}\" to reference a table.", msg_units, kind_str)); // value is a table of n_units tables
+        check(L, lua_istable(L, -1), format("{}kind string \"{}\" to reference a table.", msg_units, kind_str)); // value is a table of n_units tables
         auto n_units = lua_rawlen(L, -1);       // value is a list of units for this kind
 
         for (lua_Unsigned i = 1; i <= n_units; i++) {
             check(L, lua_rawgeti(L, -1, i) == LUA_TTABLE, format("{}unit {} in \"{}\" definition to be a list.", msg_units, i, kind_str)); // push the ith unit list
             auto n_elem = lua_rawlen(L, -1);    // number of elements in the ith unit list
-            check(L, n_elem == 2 || n_elem == 3, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}.", msg_units, i, kind_str));
+            check(L, n_elem >= 1 && n_elem <= 3, format("{}unit {} in \"{}\" definition to look like {{string, <number>, <number>}}.", msg_units, i, kind_str));
 
-            string unit_str = get_string_elem(L, 1, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}.", msg_units, i, kind_str));     // element 1 is unit_str
-            double unit_ratio = get_double_elem(L, 2, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}.", msg_units, i, kind_str));   // element 2 is unit_ratio
+            string unit_str = get_string_elem(L, 1, format("{}unit {} in \"{}\" definition to look like {{string, <number>, <number>}}.", msg_units, i, kind_str));     // element 1 is unit_str
+            double unit_ratio = (n_elem == 2 ?
+                get_double_elem(L, 2, format("{}unit {} in \"{}\" definition to look like {{string, number, <number>}}.", msg_units, i, kind_str)) : 1.0);   // element 2 is unit_ratio
             double unit_offset = (n_elem == 3 ? 
                 get_double_elem(L, 3, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}.", msg_units, i, kind_str)) : 0.0); // element 3 (optional) is unit_offset
 
             lua_pop(L, 1);  // pop the ith unit list
-            u.add_unit(unit_str, kind_str, unit_ratio, unit_offset);
+            check(L, u->add_unit(unit_str, kind_str, unit_ratio, unit_offset) != nullptr,
+                format("UnitSet: in the units table, kind \"{}\" has not been defined.", kind_str));
         }
 
         lua_pop(L, 1);  // pop the value (a list of unit lists) of the current key-value pair
     }
 
-    M = make_unique<Model>(name, index_fs_name, std::move(u));
-    FS = M->index_fs.get();
+    push_pointer<UnitSet>(L, u);
+    return 1;
 
-    push_pointer<Model>(L, M.get());
-    push_pointer<Flowsheet>(L, FS);
-
-    return 2;
 }
 
 int write_variables(lua_State* L) {
@@ -1378,8 +1405,61 @@ LuaResult run_lua_script(lua_State* L, const char* script_file_name) {
     return {.ok = true, .err_str = ""};
 }
 
+class LuaStreambuf : public std::streambuf {
+    lua_State* L;
+    std::string buffer;
+
+    void flush_to_lua() {
+        if (buffer.empty()) return;
+        lua_getglobal(L, "io");
+        lua_getfield(L, -1, "write");
+        lua_remove(L, -2);
+        lua_pushstring(L, buffer.c_str());
+        lua_pcall(L, 1, 0, 0);
+        buffer.clear();
+    }
+
+protected:
+    int overflow(int c) override {
+        if (c != EOF)
+            buffer += static_cast<char>(c);
+        return c;
+    }
+
+    int sync() override {
+        flush_to_lua();
+        return 0;
+    }
+    
+public:
+    LuaStreambuf(lua_State* L_) : L(L_) {}
+};
+
+class LuaJournal : public Ipopt::Journal {
+    lua_State* L;
+protected:
+    void PrintImpl(Ipopt::EJournalCategory, Ipopt::EJournalLevel,
+                   const char* str) override {
+        lua_getglobal(L, "io");
+        lua_getfield(L, -1, "write");
+        lua_remove(L, -2);
+        lua_pushstring(L, str);
+        lua_pcall(L, 1, 0, 0);
+    }
+    void PrintfImpl(Ipopt::EJournalCategory, Ipopt::EJournalLevel,
+                    const char* fmt, va_list ap) override {
+        char buf[4096];
+        vsnprintf(buf, sizeof(buf), fmt, ap);
+        PrintImpl({}, {}, buf);
+    }
+    void FlushBufferImpl() override {}
+public:
+    LuaJournal(lua_State* L_) : Journal("lua", Ipopt::J_ITERSUMMARY), L(L_) {}
+};
+
 static const luaL_Reg function_table[] {
     { "Output",            set_output            },
+    { "UnitSet",           create_unitset        },
     { "Model",             create_model          },
     { "Flowsheet",         flowsheet             },
     { "Streams",           add_streams           },
@@ -1387,6 +1467,7 @@ static const luaL_Reg function_table[] {
     { "Init",              initialize            },
     { "WriteVariables",    write_variables       },
     { "ShowModel",         show_model            },
+    { "ShowUnits",         show_units            },
     { "ShowVariables",     show_variables        },
     { "ShowConstraints",   show_constraints      },
     { "ShowJacobian",      show_jacobian         },
@@ -1444,9 +1525,30 @@ lua_State* start_lua() {
     return L;
 }
 
-extern "C" int luaopen_mboptlib(lua_State* L) {
+#ifdef _WIN32
+#define EXPORT_LUAOPEN __declspec(dllexport)
+#include <windows.h>
+#else
+#define EXPORT_LUAOPEN
+#endif
+
+#include <cstdlib>
+
+extern "C" EXPORT_LUAOPEN int luaopen_mboptlib(lua_State* L)
+{
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif
     lua_pushglobaltable(L);
     luaL_setfuncs(L, function_table, 0);
+
+    static LuaStreambuf lua_buf(L);
+    if (std::getenv("JPY_PARENT_PID") != nullptr) {
+        cout.rdbuf(&lua_buf);
+
+        solver->Jnlst()->DeleteAllJournals();
+        solver->Jnlst()->AddJournal(new LuaJournal(L));
+    }
 
     return 0;                     
 }

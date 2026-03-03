@@ -6,52 +6,10 @@ end
 
 n_test = 1
 
--- set up the units for the model.
-kinds = {
-    massflow = { "kg/hr",    "kg/hr"    },  -- {base_unit_str, default_unit_str}
-    massfrac = { "massfrac", "massfrac" },
-    moleflow = { "kmol/hr",  "kmol/hr"  },
-    molewt   = { "kg/kmol",  "kg/kmol"  },
-    frac     = { "frac",     "frac"     },
-    massval  = { "$/kg",     "$/kg"     },
-    flowval  = { "$/hr",     "$/hr"     },
-    count    = { "#",        "#"        }
-}
-units = {
-    massflow = {
-        { "kg/hr", 1.0,          0.0 },     -- {unit_str, unit_ratio, unit_offset} unit_offset optional
-        { "lb/hr", 1.0 / 2.20462     },
-        { "t/hr" , 1000.0            }
-    },
-    massfrac = {
-        { "massfrac", 1.0         },
-        { "mass%",    1.0 / 100.0 }
-    },
-    moleflow = {
-        { "kmol/hr", 1.0,        0.0 }
-    },
-    molewt = {
-        { "kg/kmol", 1.0,        0.0 }
-    },
-    frac = {
-        { "frac", 1.0 },
-        { "%",    1.0 }
-    },
-    massval = {
-        { "$/kg", 1.0     },
-        { "$/lb", 2.20462 }
-    },
-    flowval = {
-        { "$/hr",  1.0  },
-        { "$/min", 0.5 }
-    },
-    count = {
-        { "#", 1.0}
-    }
-}
+dofile("test_units.lua")
 
 -- test 1: Create a model.
-M, FS = Model("test_stoic", "index", kinds, units)
+M, FS = Model("test_stoic", "index", unitset)
 if M == nil or FS == nil then goto FAILED end
 print("Test 1 passed")
 n_test = n_test + 1

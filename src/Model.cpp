@@ -24,6 +24,23 @@ vector<string>& operator+=(vector<string>& c1, const vector<string>& c2)
 
 //---------------------------------------------------------
 
+char const* units_header = R"(
+┌────────────┬────────────┬──────────────┬──────────────┬──────┬─────────┐
+│    Unit    │    Kind    │     Ratio    │    Offset    │ Base │ Default │
+├────────────┼────────────┼──────────────┼──────────────┼──────┼─────────┤
+)";
+char const* units_footer =
+R"(└────────────┴────────────┴──────────────┴──────────────┴──────┴─────────┘
+)";
+
+string Unit::to_str() const {
+    return format("│{:12}│{:12}│{}│{}│{}│{}│", str, kind->str, ::str(ratio), ::str(offset),
+            (kind->base_unit == this ? "   ✓  " : "      "),
+            (kind->default_unit == this ? "    ✓    " : "         "));
+}
+
+//---------------------------------------------------------
+
 Unit* UnitSet::add_unit(const string& unit_str,
                         UnitKind*     unit_kind,
                         double        unit_ratio,
@@ -36,6 +53,23 @@ Unit* UnitSet::add_unit(const string& unit_str,
         unit_kind->default_unit = unit_p;
     units[unit_str] = std::move(unit);
     return unit_p;
+}
+
+void UnitSet::show_units(ostream& os) const {
+    int count {0};
+    std::map<string, vector<Unit*>> units_by_kind;
+    for (const auto& u : std::views::values(units))
+        units_by_kind[u->kind->str].push_back(u.get());
+
+    os << units_header;
+    for (const auto& uvec : std::views::values((units_by_kind)))
+        for (const auto& u : uvec) {
+            os << *u << '\n';
+            count++;
+        }
+    os << units_footer;
+    os << count << " Unit" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 //---------------------------------------------------------
@@ -74,6 +108,7 @@ Connection* Stream::connect() {
     for (const auto& c : comps) {
         conn_p = M->add_connection(to_sv.mass[c], from_sv.mass[c]);
         if (!conn_p) return nullptr;
+        to_sv.mass[c]->convert_and_set(*from_sv.mass[c]);
     }
     return conn_p;
 }
@@ -225,7 +260,8 @@ void Block::show_variables(ostream& os) const {
         count++;
     }
     os << var_footer;
-    os << count << " Variable" << (count > 1 ? "s" : "") << " shown\n\n";
+    os << count << " Variable" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 void Block::show_constraints(ostream& os) const {
@@ -236,7 +272,8 @@ void Block::show_constraints(ostream& os) const {
         count++;
     }
     os << con_footer;
-    os << count << " Constraint" << (count > 1 ? "s" : "") << " shown\n\n";
+    os << count << " Constraint" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 void Block::show_jacobian(ostream& os) const {
@@ -247,7 +284,8 @@ void Block::show_jacobian(ostream& os) const {
         count++;
     }
     os << jac_footer;
-    os << count << " Jacobian NZ" << (count > 1 ? "s" : "") << " shown\n\n";
+    os << count << " Jacobian NZ" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 void Block::show_hessian(ostream& os) const {
@@ -258,7 +296,8 @@ void Block::show_hessian(ostream& os) const {
         count++;
     }
     os << hess_footer;
-    os << count << " Hessian NZ" << (count > 1 ? "s" : "") << " shown\n\n";
+    os << count << " Hessian NZ" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 //---------------------------------------------------------
@@ -279,7 +318,8 @@ void Calc::show_variables(ostream& os) const {
         count++;
     }
     os << var_footer;
-    os << count << " Variable" << (count > 1 ? "s" : "") << " shown\n\n";
+    os << count << " Variable" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 void Calc::show_constraints(ostream& os) const {
@@ -290,7 +330,8 @@ void Calc::show_constraints(ostream& os) const {
         count++;
     }
     os << con_footer;
-    os << count << " Constraint" << (count > 1 ? "s" : "") << " shown\n\n";
+    os << count << " Constraint" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 void Calc::show_jacobian(ostream& os) const {
@@ -301,7 +342,8 @@ void Calc::show_jacobian(ostream& os) const {
         count++;
     }
     os << jac_footer;
-    os << count << " Jacobian NZ" << (count > 1 ? "s" : "") << " shown\n\n";
+    os << count << " Jacobian NZ" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 void Calc::show_hessian(ostream& os) const {
@@ -312,7 +354,8 @@ void Calc::show_hessian(ostream& os) const {
         count++;
     }
     os << hess_footer;
-    os << count << " Hessian NZ" << (count > 1 ? "s" : "") << " shown\n\n";
+    os << count << " Hessian NZ" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 //---------------------------------------------------------
@@ -460,7 +503,8 @@ void Model::show_variables(ostream& os) const {
         count++;
     }
     os << var_footer;
-    os << count << " Variable" << (count > 1 ? "s" : "") << " shown\n\n";
+    os << count << " Variable" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 void Model::show_constraints(ostream& os) const {
@@ -471,7 +515,8 @@ void Model::show_constraints(ostream& os) const {
         os << *con << '\n';
     }
     os << con_footer;
-    os << count << " Constraint" << (count > 1 ? "s" : "") << " shown\n\n";
+    os << count << " Constraint" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 void Model::show_jacobian(ostream& os) const {
@@ -482,7 +527,8 @@ void Model::show_jacobian(ostream& os) const {
         count++;
     }
     os << jac_footer;
-    os << count << " Jacobian NZ" << (count > 1 ? "s" : "") << " shown\n\n";
+    os << count << " Jacobian NZ" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 void Model::show_hessian(ostream& os) const {
@@ -493,7 +539,8 @@ void Model::show_hessian(ostream& os) const {
         count++;
     }
     os << hess_footer;
-    os << count << " Hessian NZ" << (count > 1 ? "s" : "") << " shown\n\n";
+    os << count << " Hessian NZ" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 void Model::show_connections(ostream& os) const {
@@ -504,7 +551,8 @@ void Model::show_connections(ostream& os) const {
         count++;
     }
     os << conn_footer;
-    os << count << " connection" << (count > 1 ? "s" : "") << " shown\n\n";
+    os << count << " connection" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 void Model::show_prices(ostream& os) const {
@@ -515,7 +563,8 @@ void Model::show_prices(ostream& os) const {
         count++;
     }
     os << price_footer;
-    os << count << " price" << (count > 1 ? "s" : "") << " shown\n\n";
+    os << count << " price" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
 }
 
 void Model::show_objective_rec(Objective* obj_, ostream& os) const {
@@ -528,7 +577,8 @@ void Model::show_objective_rec(Objective* obj_, ostream& os) const {
             show_objective_rec(std::get<Objective*>(term), os);
     }
     os << *obj_ << '\n';
-}
+    os << std::flush;
+} 
 
 void Model::show_objective(Objective* obj_, ostream& os) const {
     if (obj_ == nullptr) obj_ = obj;
@@ -536,6 +586,7 @@ void Model::show_objective(Objective* obj_, ostream& os) const {
     os << obj_header;
     show_objective_rec(obj_, os);
     os << obj_footer << '\n';
+    os << std::flush;
 }
 
 void Model::show_obj_grad(ostream& os) const {
@@ -547,6 +598,7 @@ void Model::show_obj_grad(ostream& os) const {
         os << format("|{}|{:32}|{}|\n", str(i), x_vec[i]->name, str(val));
     }
     os << obj_grad_footer << '\n';
+    os << std::flush;
 }
 
 void Model::show_model(ostream& os) const {
@@ -570,6 +622,7 @@ void Model::show_model(ostream& os) const {
         os << "Model is square\n\n";
     else
         os << format("Model has {} degree{} of freedom\n\n", nDOF, (nDOF == 1 ? "" : "s"));
+    os << std::flush;
 
 }
 
@@ -578,6 +631,7 @@ void Model::write_variables(ostream& os) const {
     for (const auto& var : x_vec)
         os << format("    {:32} = {}_{}\n", var->name, str(var->value), var->unit->str);
     os << "]])\n";
+    os << std::flush;
 }
 
 
