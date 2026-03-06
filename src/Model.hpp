@@ -103,8 +103,11 @@ struct UnitSet
     UnitKind* add_kind(const string& unit_kind_str,
                        const string& base_unit_str,
                        const string& default_unit_str = "") {
-        return (kinds[unit_kind_str] = make_unique<UnitKind>(unit_kind_str, base_unit_str,
+        auto uk = (kinds[unit_kind_str] = make_unique<UnitKind>(unit_kind_str, base_unit_str,
             default_unit_str.empty() ? base_unit_str : default_unit_str)).get();
+        if (!units.contains(base_unit_str))
+            add_unit(base_unit_str, unit_kind_str);
+        return uk;
     }
 
     Unit* get_default_unit(const string& unit_kind_str) {

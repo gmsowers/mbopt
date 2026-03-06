@@ -1278,21 +1278,24 @@ int create_unitset(lua_State* L) {
     const string msg_expected {"UnitSet: expected "};
     const string msg_kinds {"UnitSet: in the kinds table, expected "};
     const string msg_units {"UnitSet: in the units table, expected "};
+    auto u {new UnitSet};
     auto n_args = lua_gettop(L);
+    if (n_args == 0) {
+        push_pointer<UnitSet>(L, u);
+        return 1;
+    }
     check(L, n_args == 2, format("{}2 arguments, got {}.", msg_expected, n_args));
     check(L, lua_istable(L, 1),  msg_expected + "argument 1 to be a table.");  // arg 1 is a kinds table
     check(L, lua_istable(L, 2),  msg_expected + "argument 2 to be a table.");  // arg 2 is a units table
-
-    auto u {new UnitSet};
 
     // kinds table:
     lua_pushnil(L);                             // push a nil key to start
     while (lua_next(L, 1) != 0) {               // pops the key, then pushes next key-value pair
         string kind_str = lua_tostring(L, -2);  // key is kind_str
-        check(L, lua_istable(L, -1), format("{}key \"{}\" to reference a table.", msg_kinds, kind_str)); // value is table with 1 or 2 strings
+        check(L, lua_istable(L, -1), format("{}key \"{}\" to reference a table.", msg_kinds, kind_str)); // value is table containing 1 or 2 strings
 
         auto n_str = lua_rawlen(L, -1);         // number of strings in the table
-        check(L, n_str > 0 && n_str < 3, format("{}1 or 2 strings in the \"{}\" definition.", msg_kinds, kind_str));
+        check(L, n_str == 1 || n_str == 2, format("{}1 or 2 strings in the \"{}\" definition.", msg_kinds, kind_str));
 
         string base_unit_str = get_string_elem(L, 1,
             format("{}element 1 in the \"{}\" definition to be a string.", msg_kinds, kind_str)); // element 1 is base_unit_str
@@ -1317,7 +1320,7 @@ int create_unitset(lua_State* L) {
             check(L, n_elem >= 1 && n_elem <= 3, format("{}unit {} in \"{}\" definition to look like {{string, <number>, <number>}}.", msg_units, i, kind_str));
 
             string unit_str = get_string_elem(L, 1, format("{}unit {} in \"{}\" definition to look like {{string, <number>, <number>}}.", msg_units, i, kind_str));     // element 1 is unit_str
-            double unit_ratio = (n_elem == 2 ?
+            double unit_ratio = (n_elem >= 2 ?
                 get_double_elem(L, 2, format("{}unit {} in \"{}\" definition to look like {{string, number, <number>}}.", msg_units, i, kind_str)) : 1.0);   // element 2 is unit_ratio
             double unit_offset = (n_elem == 3 ? 
                 get_double_elem(L, 3, format("{}unit {} in \"{}\" definition to look like {{string, number, number}}.", msg_units, i, kind_str)) : 0.0); // element 3 (optional) is unit_offset
@@ -1333,6 +1336,46 @@ int create_unitset(lua_State* L) {
     push_pointer<UnitSet>(L, u);
     return 1;
 
+}
+
+int add_kind(lua_State* L) {
+    const string msg {"AddKind: expected "};
+    auto n_args = lua_gettop(L);
+    check(L, n_args == 3 || n_args == 4, format("{}3 or 4 arguments, got {}.", msg, n_args));
+    check(L, lua_isuserdata(L, 1),  msg + "argument 1 to be a UnitSet.");      // arg 1 is a UnitSet
+    check(L, lua_isstring(L, 2),  msg + "argument 2 to be a string.");         // arg 2 is a kind string
+    check(L, lua_isstring(L, 3),  msg + "argument 3 to be a string.");         // arg 3 is a base unit string
+    if (n_args == 4)
+        check(L, lua_isstring(L, 4),  msg + "argument 4 to be a string.");     // arg 4 is a default unit string
+    auto u = get_typed_ptr<UnitSet>(L, 1, msg + "argument 1 to be a UnitSet.");
+    check(L, u != nullptr, msg + "argument 1 to be a UnitSet.");
+    string kind_str = lua_tostring(L, 2);
+    string base_unit_str = lua_tostring(L, 3);
+    string default_unit_str = (n_args == 4 ? lua_tostring(L, 4) : base_unit_str);
+    u->add_kind(kind_str, base_unit_str, default_unit_str);
+    return 0;
+}
+
+int add_unit(lua_State* L) {
+    const string msg {"AddUnit: expected "};
+    auto n_args = lua_gettop(L);
+    check(L, n_args >= 3 && n_args <= 5, format("{}3, 4, or 5 arguments, got {}.", msg, n_args));
+    check(L, lua_isuserdata(L, 1),  msg + "argument 1 to be a UnitSet.");      // arg 1 is a UnitSet
+    check(L, lua_isstring(L, 2),  msg + "argument 2 to be a string.");         // arg 2 is a kind string
+    check(L, lua_isstring(L, 3),  msg + "argument 3 to be a string.");         // arg 3 is a unit string
+    if (n_args > 3)
+        check(L, lua_isnumber(L, 4), msg + "argument 4 to be a number.");
+    if (n_args > 4)
+        check(L, lua_isnumber(L, 5), msg + "argument 5 to be a number.");
+    auto u = get_typed_ptr<UnitSet>(L, 1, msg + "argument 1 to be a UnitSet.");
+    check(L, u != nullptr, msg + "argument 1 to be a UnitSet.");
+    string kind_str = lua_tostring(L, 2);
+    string unit_str = lua_tostring(L, 3);
+    double unit_ratio = (n_args > 3 ? lua_tonumber(L, 4) : 1.0);
+    double unit_offset = (n_args > 4 ? lua_tonumber(L, 5) : 0.0); 
+    check(L, u->add_unit(unit_str, kind_str, unit_ratio, unit_offset) != nullptr,
+        format("AddUnit: kind \"{}\" has not been defined yet.", kind_str));
+    return 0;
 }
 
 int write_variables(lua_State* L) {
@@ -1460,6 +1503,8 @@ public:
 static const luaL_Reg function_table[] {
     { "Output",            set_output            },
     { "UnitSet",           create_unitset        },
+    { "AddKind",           add_kind              },
+    { "AddUnit",           add_unit              },
     { "Model",             create_model          },
     { "Flowsheet",         flowsheet             },
     { "Streams",           add_streams           },
