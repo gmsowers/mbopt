@@ -68,6 +68,7 @@ struct Unit
     {}
 
     string to_str() const;
+    string to_str_2() const;
 };
 
 struct UnitKind
@@ -77,6 +78,11 @@ struct UnitKind
     string default_unit_str {};
     Unit*  base_unit        {};
     Unit*  default_unit     {};
+
+    string to_str() const {
+        return format("Kind = {}, BaseUnit = {}, DefaultUnit = {}", str, base_unit_str, default_unit_str);
+    }
+
 };
 
 struct UnitSet
@@ -174,6 +180,10 @@ public:
     virtual operator double() const
         {return convert_to_base();}
 
+    string to_str() const {
+        return (str(value) + "_" + unit->str);
+    }
+    
 };
 
 class Variable : public Quantity
@@ -196,9 +206,10 @@ public:
     bool is_fixed() const {return (spec == VariableSpec::Fixed);}
     bool is_free()  const {return (spec == VariableSpec::Free);}
 
-    string to_str() const
-        {return format("│{}│{:32}│{}│{}│{}│{}│{:8}│", str(ix), name, str(spec), str(value),
-            str(lower), str(upper), unit->str);}
+    string to_str() const {
+        return format("│{}│{:32}│{}│{}│{}│{}│{:8}│", str(ix), name, str(spec), str(value),
+            str(lower), str(upper), unit->str);
+    }
 
 };
 
@@ -218,8 +229,9 @@ struct Constraint
     Constraint& operator+=(const double& val) {value += val; return *this;}
     Constraint& operator-=(const double& val) {value -= val; return *this;}
 
-    string to_str() const
-        {return format("│{}│{:32}│{}│", str(ix), name, str(value));}
+    string to_str() const {
+        return format("│{}│{:32}│{}│", str(ix), name, str(value));
+    }
 
 };
 
@@ -238,9 +250,10 @@ struct JacobianNZ
         var {var_}
     {}
 
-    string to_str() const
-    {return format("│{}│{}│{}│{:32}│{:32}│{}│", str(ix), str(con->ix), str(var->ix),
-        con->name, var->name, str(value));}
+    string to_str() const {
+        return format("│{}│{}│{}│{:32}│{:32}│{}│", str(ix), str(con->ix), str(var->ix),
+            con->name, var->name, str(value));
+    }
 
     JacobianNZ& operator=(const double& val) {value = val; return *this;}
 };
@@ -262,9 +275,10 @@ struct HessianNZ
         var1 {var1_},
         var2 {var2_} {}
 
-    string to_str() const
-        {return format("│{}│{}│{}│{}│{:32}│{:32}│{:32}│{}│", str(ix), str(con->ix), str(var1->ix),
-            str(var2->ix), con->name, var1->name, var2->name, str(value));}
+    string to_str() const {
+        return format("│{}│{}│{}│{}│{:32}│{:32}│{:32}│{}│", str(ix), str(con->ix), str(var1->ix),
+            str(var2->ix), con->name, var1->name, var2->name, str(value));
+    }
 
     HessianNZ& operator=(const double& val) {value = val; return *this;}
 };
@@ -512,6 +526,8 @@ public:
 
         return ok;
     }
+
+    void show_flowsheet(ostream& os = cout) const;
 
 private:
     void eval(auto feval) {

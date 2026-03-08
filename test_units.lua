@@ -42,4 +42,4 @@ units = {
     }
 }
 unitset = UnitSet(kinds, units)
-ShowUnits(unitset)
+print(unitset.kinds["moleflow"])

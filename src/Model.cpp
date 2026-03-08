@@ -39,6 +39,10 @@ string Unit::to_str() const {
             (kind->default_unit == this ? "    ✓    " : "         "));
 }
 
+string Unit::to_str_2() const {
+    return units_header + to_str() + '\n' + units_footer;
+}
+
 //---------------------------------------------------------
 
 Unit* UnitSet::add_unit(const string& unit_str,
@@ -129,6 +133,24 @@ Stream* Flowsheet::add_stream(const string&  name_,
     this->streams[name_] = std::move(strm);
     return strm_p;
 }
+
+void Flowsheet::show_flowsheet(ostream& os) const {
+    os << "Flowsheet: " << name << '\n';
+    for (const auto& blk : blocks) {
+        os << format("  {:12} in= ", blk->name);
+        for (const auto& sin : blk->inlets)
+            os << sin->name << ' ';
+        os << '\n' << format("              out= ");
+        for (const auto& sout : blk->outlets)
+            os << sout->name;
+        os << '\n';
+    }
+    for (const auto& clc : calcs)
+        os << format("  {:12}", clc->name);
+    os << '\n' << std::flush;
+}
+
+//---------------------------------------------------------
 
 char const* var_header = R"(
 ┌─────┬────────────────────────────────┬───┬──────────────┬──────────────┬──────────────┬────────┐

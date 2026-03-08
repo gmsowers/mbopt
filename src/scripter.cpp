@@ -111,6 +111,9 @@ struct TypedPtr {
     void* ptr;
     std::type_index type_idx;
     std::type_index subtype_idx;
+
+    template <typename T>
+    bool isa() { return (type_idx == typeid(T) || subtype_idx == typeid(T)); }
 };
 
 template <typename T>
@@ -119,7 +122,7 @@ T* get_typed_ptr(lua_State* L, int index, const string& err_msg) {
     auto tp = static_cast<TypedPtr*>(lua_touserdata(L, -1));
     check(L, tp != nullptr, err_msg);
     T* ptr {};
-    if (tp->type_idx == typeid(T))
+    if (tp->isa<T>())
         ptr = static_cast<T*>(tp->ptr);
     check(L, ptr != nullptr, err_msg);
     lua_pop(L, 1);
@@ -132,6 +135,9 @@ T* get_typed_ptr_elem(lua_State* L, int index, const string& err_msg) {
     return get_typed_ptr<T>(L, 0, err_msg);
 }
 
+int typed_ptr_tostring(lua_State* L);
+int typed_ptr_index(lua_State* L);
+
 template <typename T, typename sub_T = void>
 void push_pointer(lua_State* L, T* p) {
     if (!p)
@@ -141,6 +147,12 @@ void push_pointer(lua_State* L, T* p) {
         tp->ptr = p;
         tp->type_idx = typeid(T);
         tp->subtype_idx = typeid(sub_T);
+        lua_newtable(L);
+        lua_pushcfunction(L, typed_ptr_index);
+        lua_setfield(L, -2, "__index");
+        lua_pushcfunction(L, typed_ptr_tostring);
+        lua_setfield(L, -2, "__tostring");
+        lua_setmetatable(L, -2);
     }
 }
 
@@ -167,32 +179,32 @@ int delegate(lua_State* L, string_view f_name, auto f) {
         if (lua_isuserdata(L, i)) {
             auto tp = static_cast<TypedPtr*>(lua_touserdata(L, -1));
             if (!tp) continue;
-            if (tp->type_idx == typeid(Model)) {
+            if (tp->isa<Model>()) {
                 auto p = static_cast<Model*>(tp->ptr);
                 if (p) f(p);
             }
-            else if (tp->type_idx == typeid(Block)) {
-                if (tp->subtype_idx == typeid(Mixer)) {
+            else if (tp->isa<Block>()) {
+                if (tp->isa<Mixer>()) {
                     auto p = static_cast<Mixer*>(tp->ptr);
                     if (p) f(p);
-                } else if (tp->subtype_idx == typeid(Splitter)) {
+                } else if (tp->isa<Splitter>()) {
                     auto p = static_cast<Splitter*>(tp->ptr);
                     if (p) f(p);
-                } else if (tp->subtype_idx == typeid(Separator)) {
+                } else if (tp->isa<Separator>()) {
                     auto p = static_cast<Separator*>(tp->ptr);
                     if (p) f(p);
-                } else if (tp->subtype_idx == typeid(YieldReactor)) {
+                } else if (tp->isa<YieldReactor>()) {
                     auto p = static_cast<YieldReactor*>(tp->ptr);
                     if (p) f(p);
-                } else if (tp->subtype_idx == typeid(MultiYieldReactor)) {
+                } else if (tp->isa<MultiYieldReactor>()) {
                     auto p = static_cast<MultiYieldReactor*>(tp->ptr);
                     if (p) f(p);
-                } else if (tp->subtype_idx == typeid(StoicReactor)) {
+                } else if (tp->isa<StoicReactor>()) {
                     auto p = static_cast<StoicReactor*>(tp->ptr);
                     if (p) f(p);
                 }
             }
-            else if (tp->type_idx == typeid(Calc)) {
+            else if (tp->isa<Calc>()) {
                 auto p = static_cast<Calc*>(tp->ptr);
                 if (p) f(p);
             }
@@ -269,7 +281,7 @@ int get_variable_attr(lua_State* L, string_view f_name, auto get_attr) {
     check(L, lua_gettop(L) == 1, format("{}: expected 1 argument.", f_name));
     if (lua_isuserdata(L, -1)) {
         auto tp = static_cast<TypedPtr*>(lua_touserdata(L, -1));
-        check(L, tp != nullptr && tp->type_idx == typeid(Variable), format("{}: expected argument to be a Variable.", f_name));
+        check(L, tp != nullptr && tp->isa<Variable>(), format("{}: expected argument to be a Variable.", f_name));
         auto p = static_cast<Variable*>(tp->ptr);
         res = {get_attr(p), p->unit->str};
     }
@@ -318,7 +330,7 @@ int get_spec(lua_State* L) {
     }
     else if (lua_isuserdata(L, -1)) {
         auto tp = static_cast<TypedPtr*>(lua_touserdata(L, -1));
-        check(L, tp != nullptr && tp->type_idx == typeid(Variable), msg + "argument to be a Variable.");
+        check(L, tp != nullptr && tp->isa<Variable>(), msg + "argument to be a Variable.");
         auto p = static_cast<Variable*>(tp->ptr);
         lua_pushstring(L, p->spec == VariableSpec::Fixed ? "Fixed" : "Free");
         return 1;
@@ -335,17 +347,48 @@ int get_var(lua_State* L) {
     check(L, lua_gettop(L) == 1 && lua_isstring(L, -1), msg + "1 argument, a string.");
     string name = lua_tostring(L, -1);
     check(L, M->x_map.contains(name), format("{}expected \"{}\" to be a valid Variable name.", msg, name));
-    push_pointer<Variable>(L, M->x_map[name]);
+    push_pointer<Quantity, Variable>(L, M->x_map[name]);
+    return 1;
+}
+
+int get_kind(lua_State* L) {
+    string const msg {"get_kind: expected "};
+    string const msg2 {"argument 2 to be a string or a Unit."};
+    auto n_args = lua_gettop(L);
+    check(L, n_args == 2, format("{}2 arguments, got {}", msg, n_args));
+    auto uset = get_typed_ptr<UnitSet>(L, 1, msg + "argument 1 to be a UnitSet.");
+    Unit* u;
+    if (lua_isstring(L, -1)) {
+        string unit_str = lua_tostring(L, -1);
+        check(L, uset->units.contains(unit_str), format("get_kind: unit \"{}\" is not defined yet.", unit_str));
+        u = uset->units[unit_str].get();
+    }
+    else if (lua_isuserdata(L, -1))
+        u = get_typed_ptr<Unit>(L, -1, msg + "argument to be a Unit.");
+    else
+        luaL_error(L, format("{}{}", msg, msg2).c_str());
+
+    push_pointer<UnitKind>(L, u->kind);
     return 1;
 }
 
 int get_unit(lua_State* L) {
-    string const msg {"Unit: expected "};
+    string const msg {"get_unit: expected "};
+    string const msg2 {"argument to be a string or a quantity with a Unit."};
+    auto n_args = lua_gettop(L);
+    if (n_args == 2) {
+        auto uset = get_typed_ptr<UnitSet>(L, 1, msg + "argument 1 to be a UnitSet.");
+        check(L, lua_isstring(L, 2), msg + "argument 2 to be a string.");
+        string unit_str = lua_tostring(L, 2);
+        check(L, uset->units.contains(unit_str), format("{}unit \"{}\" is not defined yet.", msg, unit_str));
+        push_pointer<Unit>(L, uset->units[unit_str].get());
+        return 1;
+    }
     checkM(L, msg + errM);
-    check(L, lua_gettop(L) == 1, msg + "1 argument, one of: Variable, Price, Objective, string.");
+    check(L, n_args == 1, msg + msg2);
     if (lua_isstring(L, 1)) {
         string arg = lua_tostring(L, 1);
-        if (M->x_map.contains(arg)) {   // Variable name
+        if (M->x_map.contains(arg)) {                   // Variable name
             push_pointer<Unit>(L, M->x_map[arg]->unit);
             return 1;
         }
@@ -353,35 +396,31 @@ int get_unit(lua_State* L) {
             push_pointer<Unit>(L, M->unit_set.units[arg].get());
             return 1;
         }
-        else if (M->prices.contains(arg)) {     // Price name
+        else if (M->prices.contains(arg)) {             // Price name
             push_pointer<Unit>(L, M->prices[arg]->unit);
             return 1;
         }
-        else if (M->objectives.contains(arg)) {     // Objective name
+        else if (M->objectives.contains(arg)) {         // Objective name
             push_pointer<Unit>(L, M->objectives[arg]->unit);
             return 1;
         }
         else
-            luaL_error(L, format("{}argument to be one of: Variable, Price, Objective, string.", msg).c_str());
+            luaL_error(L, format("Unit: argument \"{}\" is not defined.", arg).c_str());
     }
     else if (lua_isuserdata(L, 1)) {
         auto tp = static_cast<TypedPtr*>(lua_touserdata(L, 1));
         Unit* u;
-        check(L, tp != nullptr, msg + "{}argument to be one of: Variable, Price, Objective, string.");
-        if (tp->type_idx == typeid(Variable))
-            u = static_cast<Variable*>(tp->ptr)->unit;
-        else if (tp->type_idx == typeid(Price))
-            u = static_cast<Price*>(tp->ptr)->unit;
-        else if (tp->type_idx == typeid(Objective))
-            u = static_cast<Objective*>(tp->ptr)->unit;
+        check(L, tp != nullptr, msg + msg2);
+        if (tp->isa<Quantity>())
+            u = static_cast<Quantity*>(tp->ptr)->unit;
         else
-            luaL_error(L, format("{}argument to be one of: Variable, Price, Objective, string.", msg).c_str());
+            luaL_error(L, format("{}{}", msg, msg2).c_str());
 
         push_pointer<Unit>(L, u);
         return 1;
     }
     else
-        luaL_error(L, format("{}argument to be one of: Variable, Price, Objective, string.", msg).c_str());
+        luaL_error(L, format("{}{}", msg, msg2).c_str());
 
     return 0;
 
@@ -390,14 +429,14 @@ int get_unit(lua_State* L) {
 int change_unit(lua_State* L) {
     string const msg {"ChangeUnit: expected "};
     checkM(L, msg + errM);
-    check(L, lua_gettop(L) == 2, msg + "2 arguments, a Variable/Price/Objective and a Unit.");
+    check(L, lua_gettop(L) == 2, msg + "2 arguments, a Quantity and a Unit or unit string.");
     string unit_str;
     if (lua_isstring(L, 2))
         unit_str = lua_tostring(L, 2);
     else if (lua_isuserdata(L, 2)) {
         auto tp = static_cast<TypedPtr*>(lua_touserdata(L, 2));
         check(L, tp != nullptr, msg + "{}argument 2 to be a Unit or a string.");
-        if (tp->type_idx == typeid(Unit))
+        if (tp->isa<Unit>())
             unit_str = static_cast<Unit*>(tp->ptr)->str;
         else
             luaL_error(L, format("{}argument 2 to be a Unit or a string.", msg).c_str());
@@ -427,29 +466,13 @@ int change_unit(lua_State* L) {
             }
         }
         else
-            luaL_error(L, format("{}argument 1 to be a Variable, Price, or Objective.", msg).c_str());
+            luaL_error(L, format("{}argument 1 to be the name of a Variable, Price, or Objective.", msg).c_str());
     }
     else if (lua_isuserdata(L, 1)) {
         auto tp = static_cast<TypedPtr*>(lua_touserdata(L, 1));
-        check(L, tp != nullptr, format("{}argument 1 to be a Variable, Price, or Objective.", msg));
-        if (tp->type_idx == typeid(Variable)) {
-            auto p = static_cast<Variable*>(tp->ptr);
-            Ndouble retval = p->change_unit(M.get(), unit_str);
-            if (retval.has_value()) {
-                lua_pushnumber(L, retval.value());
-                return 1;
-            }
-        }
-        else if (tp->type_idx == typeid(Price)) {
-            auto p = static_cast<Price*>(tp->ptr);
-            Ndouble retval = p->change_unit(M.get(), unit_str);
-            if (retval.has_value()) {
-                lua_pushnumber(L, retval.value());
-                return 1;
-            }
-        }
-        else if (tp->type_idx == typeid(Objective)) {
-            auto p = static_cast<Objective*>(tp->ptr);
+        check(L, tp != nullptr, format("{}argument 1 to be a Quantity.", msg));
+        if (tp->isa<Quantity>()) {
+            auto p = static_cast<Quantity*>(tp->ptr);
             Ndouble retval = p->change_unit(M.get(), unit_str);
             if (retval.has_value()) {
                 lua_pushnumber(L, retval.value());
@@ -457,10 +480,10 @@ int change_unit(lua_State* L) {
             }
         }
         else
-            luaL_error(L, format("{}argument 1 to be a Variable, Price, or Objective.", msg).c_str());
+            luaL_error(L, format("{}argument 1 to be a Quantity.", msg).c_str());
     }
     else
-        luaL_error(L, format("{}argument 1 to be a Variable, Price, or Objective.", msg).c_str());
+        luaL_error(L, format("{}argument 1 to be a Quantity or the name of a Quantity.", msg).c_str());
         
     return 0;
 
@@ -471,33 +494,29 @@ int set_value(lua_State* L) {
     checkM(L, msg + errM);
     auto n_args = lua_gettop(L);
     check(L, n_args == 2, msg + format("{}2 arguments, got {}.", msg, n_args));
-    check(L, lua_isuserdata(L, 1), msg + "argument 1 to be one of: Variable, Constraint, JacobianNZ, HessianNZ, Price.");
+    check(L, lua_isuserdata(L, 1), msg + "argument 1 to be one of: Quantity, Constraint, JacobianNZ, HessianNZ.");
     check(L, lua_isnumber(L, 2), msg + "argument 2 to be a number.");
     auto tp = static_cast<TypedPtr*>(lua_touserdata(L, 1));
     double val = lua_tonumber(L, 2);
     check(L, tp != nullptr, msg + "argument 1 not to be null."); 
-    if (tp->type_idx == typeid(Variable)) {
-        auto var = static_cast<Variable*>(tp->ptr);
+    if (tp->isa<Quantity>()) {
+        auto var = static_cast<Quantity*>(tp->ptr);
         var->convert_and_set(val);
     }
-    else if (tp->type_idx == typeid(Constraint)) {
+    else if (tp->isa<Constraint>()) {
         auto con = static_cast<Constraint*>(tp->ptr);
         con->value = val;
     }
-    else if (tp->type_idx == typeid(JacobianNZ)) {
+    else if (tp->isa<JacobianNZ>()) {
         auto jnz = static_cast<JacobianNZ*>(tp->ptr);
         jnz->value = val;
     }
-    else if (tp->type_idx == typeid(HessianNZ)) {
+    else if (tp->isa<HessianNZ>()) {
         auto hnz = static_cast<HessianNZ*>(tp->ptr);
         hnz->value = val;
     }
-    else if (tp->type_idx == typeid(Price)) {
-        auto price = static_cast<Price*>(tp->ptr);
-        price->convert_and_set(val);
-    }
     else
-        check(L, false, msg + "argument 1 to be one of: Variable, Constraint, JacobianNZ, HessianNZ, Price.");
+        check(L, false, msg + "argument 1 to be one of: Quantity, Constraint, JacobianNZ, HessianNZ.");
 
      return 0;
 }
@@ -516,10 +535,6 @@ int show_jacobian(lua_State* L) {
 
 int show_hessian(lua_State* L) {
     return delegate(L, "ShowHessian", [](auto* p) { p->show_hessian(*OUT); });
-}
-
-int show_model(lua_State* L) {
-    return delegate(L, "ShowModel", [](auto* p) { p->show_model(*OUT); });
 }
 
 int show_connections(lua_State* L) {
@@ -560,20 +575,6 @@ int show_obj_grad(lua_State* L) {
     return 0;
 }
 
-int show_units(lua_State* L) {
-    string const msg {"ShowUnits: expected "};
-    auto n_args = lua_gettop(L);
-    check(L, n_args <= 1, "0 or 1 argument.");
-    if (n_args == 0) {
-        checkM(L, msg + errM);
-        M->show_units(*OUT);
-        return 0;
-    }
-    auto unitset = get_typed_ptr<UnitSet>(L, 1, msg + "argument 1 to be a UnitSet.");
-    unitset->show_units(*OUT);
-    return 0;
-}
-
 int initialize(lua_State* L) {
     return delegate(L, "Init", [](auto* p) { p->initialize(); });
 }
@@ -586,17 +587,17 @@ int connect(lua_State* L) {
     check(L, lua_isuserdata(L, 1), msg + "argument 1 to be a Variable or a Stream.");
     auto tp = static_cast<TypedPtr*>(lua_touserdata(L, 1));
     check(L, tp != nullptr, msg + "argument 1 to be a Variable or a Stream.");
-    if (tp->type_idx == typeid(Variable)) {
+    if (tp->isa<Variable>()) {
         auto var1 = static_cast<Variable*>(tp->ptr);
         check(L, n_args == 2, msg + "2 arguments, both Variables.");
         tp = static_cast<TypedPtr*>(lua_touserdata(L, 2));
-        check(L, (tp != nullptr) && (tp->type_idx == typeid(Variable)), msg + "argument 2 to be a Variable or a Stream.");
+        check(L, (tp != nullptr) && (tp->isa<Variable>()), msg + "argument 2 to be a Variable or a Stream.");
         auto var2 = static_cast<Variable*>(tp->ptr);
         auto conn = M->add_connection(var1, var2);
         push_pointer<Connection>(L, conn);
         return 1;
     }
-    else if (tp->type_idx == typeid(Stream)) {
+    else if (tp->isa<Stream>()) {
         auto strm = static_cast<Stream*>(tp->ptr);
         auto conn = strm->connect();
         push_pointer<Connection>(L, conn);
@@ -930,9 +931,21 @@ int add_variables(lua_State* L) {
     }
 
     for (int i = 1; i <= n_vars; i++)
-        push_pointer<Variable>(L, vars[i - 1]);
+        push_pointer<Quantity, Variable>(L, vars[i - 1]);
 
     return n_vars;
+}
+
+int add_quantity(lua_State* L) {
+    const string msg {"Quantity: expected "};
+    auto n_args = lua_gettop(L);
+    check(L, n_args == 2, format("{}2 arguments, a number and a Unit.", msg));
+    check(L, lua_isnumber(L, 1), msg + "argument 1 to be a number.");
+    double value = lua_tonumber(L, 1);
+    auto u = get_typed_ptr<Unit>(L, 2, msg + "argument 2 to be a Unit.");
+    Quantity* q {new Quantity(value, u)};
+    push_pointer<Quantity>(L, q);
+    return 1;
 }
 
 int add_constraints(lua_State* L) {
@@ -1096,7 +1109,7 @@ int add_prices(lua_State* L) {
     }
 
     for (int i = 1; i <= n_args; i++)
-        push_pointer<Price>(L, prices[i - 1]);
+        push_pointer<Quantity, Price>(L, prices[i - 1]);
 
     return n_args;
 }
@@ -1236,14 +1249,14 @@ int add_objective(lua_State* L) {
     }
 
     // Push a pointer to the objective.
-    push_pointer<Objective>(L, obj);
+    push_pointer<Quantity, Objective>(L, obj);
 
     // Push pointers to the objective terms.
     for (int i = 0; i < n_terms; i++)
         if (std::holds_alternative<ObjTerm*>(terms[i]))
-            push_pointer<ObjTerm>(L, std::get<ObjTerm*>(terms[i]));
+            push_pointer<Quantity, ObjTerm>(L, std::get<ObjTerm*>(terms[i]));
         else
-            push_pointer<Objective>(L, std::get<Objective*>(terms[i]));
+            push_pointer<Quantity, Objective>(L, std::get<Objective*>(terms[i]));
 
     return n_terms + 1;
 }
@@ -1352,8 +1365,9 @@ int add_kind(lua_State* L) {
     string kind_str = lua_tostring(L, 2);
     string base_unit_str = lua_tostring(L, 3);
     string default_unit_str = (n_args == 4 ? lua_tostring(L, 4) : base_unit_str);
-    u->add_kind(kind_str, base_unit_str, default_unit_str);
-    return 0;
+    auto ukind = u->add_kind(kind_str, base_unit_str, default_unit_str);
+    push_pointer<UnitKind>(L, ukind);
+    return 1;
 }
 
 int add_unit(lua_State* L) {
@@ -1372,10 +1386,12 @@ int add_unit(lua_State* L) {
     string kind_str = lua_tostring(L, 2);
     string unit_str = lua_tostring(L, 3);
     double unit_ratio = (n_args > 3 ? lua_tonumber(L, 4) : 1.0);
-    double unit_offset = (n_args > 4 ? lua_tonumber(L, 5) : 0.0); 
-    check(L, u->add_unit(unit_str, kind_str, unit_ratio, unit_offset) != nullptr,
+    double unit_offset = (n_args > 4 ? lua_tonumber(L, 5) : 0.0);
+    auto unit = u->add_unit(unit_str, kind_str, unit_ratio, unit_offset);
+    check(L, unit != nullptr,
         format("AddUnit: kind \"{}\" has not been defined yet.", kind_str));
-    return 0;
+    push_pointer<Unit>(L, unit);
+    return 1;
 }
 
 int write_variables(lua_State* L) {
@@ -1398,6 +1414,101 @@ int write_variables(lua_State* L) {
     }
 
     return 0;
+}
+
+int typed_ptr_index(lua_State* L) {
+    auto tp = static_cast<TypedPtr*>(lua_touserdata(L, 1));
+    string field = lua_tostring(L, 2);
+    if (tp->isa<Model>()) {
+        auto m = static_cast<Model*>(tp->ptr);
+        if (field == "unitset")
+            push_pointer<UnitSet>(L, &m->unit_set);
+        else
+            lua_pushnil(L);
+    }
+    else if (tp->isa<Quantity>()) {
+        auto q = static_cast<Quantity*>(tp->ptr);
+        if (field == "name")
+            lua_pushstring(L, q->name.c_str());
+        else if (field == "value")
+            lua_pushnumber(L, q->value);
+        else if (field == "unit")
+            push_pointer<Unit>(L, q->unit);
+        else
+            lua_pushnil(L);
+    }
+    else if (tp->isa<UnitSet>()) {
+        auto us = static_cast<UnitSet*>(tp->ptr);
+        if (field == "kinds") {
+            lua_newtable(L);
+            for (const auto& [kind_str, unit_kind] : us->kinds) {
+                lua_pushstring(L, kind_str.c_str());
+                push_pointer<UnitKind>(L, unit_kind.get());
+                lua_settable(L, -3);
+            }            
+        }
+        else if (field == "units") {
+            lua_newtable(L);
+            for (const auto& [unit_str, unit] : us->units) {
+                lua_pushstring(L, unit_str.c_str());
+                push_pointer<Unit>(L, unit.get());
+                lua_settable(L, -3);
+            }            
+        }
+        else if (field == "add_kind")
+            lua_pushcfunction(L, add_kind);
+        else if (field == "get_kind")
+            lua_pushcfunction(L, get_kind);
+        else if (field == "add_unit")
+            lua_pushcfunction(L, add_unit);
+        else
+            lua_pushnil(L);
+    }
+    else
+        lua_pushnil(L);
+
+    return 1;
+}
+
+int typed_ptr_tostring(lua_State* L) {
+    std::ostringstream oss;
+    string s;
+    auto tp = static_cast<TypedPtr*>(lua_touserdata(L, 1));
+    if (tp->isa<UnitSet>()) {
+        static_cast<UnitSet*>(tp->ptr)->show_units(oss);
+        lua_pushstring(L, oss.str().c_str());
+        return 1;
+    }
+    if (tp->isa<UnitKind>()) {
+        s = static_cast<UnitKind*>(tp->ptr)->to_str();
+        lua_pushstring(L, s.c_str());
+        return 1;
+    }
+    if (tp->isa<Unit>()) {
+        s = static_cast<Unit*>(tp->ptr)->to_str_2();
+        lua_pushstring(L, s.c_str());
+        return 1;
+    }
+    if (tp->isa<Quantity>() && tp->subtype_idx == typeid(void)) {
+        s = static_cast<Quantity*>(tp->ptr)->to_str();
+        lua_pushstring(L, s.c_str());
+        return 1;
+    }
+    if (tp->isa<Model>()) {
+        static_cast<Model*>(tp->ptr)->show_model(oss);
+        lua_pushstring(L, oss.str().c_str());
+        return 1;
+    }
+    if (tp->isa<Flowsheet>()) {
+        static_cast<Flowsheet*>(tp->ptr)->show_flowsheet();
+        lua_pushstring(L, oss.str().c_str());
+        return 1;
+    }
+
+    s = "not implemented yet";
+    lua_pushstring(L, s.c_str());
+    return 1;
+
 }
 
 int set_output(lua_State* L) {
@@ -1503,16 +1614,12 @@ public:
 static const luaL_Reg function_table[] {
     { "Output",            set_output            },
     { "UnitSet",           create_unitset        },
-    { "AddKind",           add_kind              },
-    { "AddUnit",           add_unit              },
     { "Model",             create_model          },
     { "Flowsheet",         flowsheet             },
     { "Streams",           add_streams           },
     { "Eval",              eval_expr             },
     { "Init",              initialize            },
     { "WriteVariables",    write_variables       },
-    { "ShowModel",         show_model            },
-    { "ShowUnits",         show_units            },
     { "ShowVariables",     show_variables        },
     { "ShowConstraints",   show_constraints      },
     { "ShowJacobian",      show_jacobian         },
@@ -1527,7 +1634,6 @@ static const luaL_Reg function_table[] {
     { "UB",                get_upper             },
     { "Spec",              get_spec              },
     { "Var",               get_var               },
-    { "Unit",              get_unit              },
     { "ChangeUnit",        change_unit           },
     { "SetValue",          set_value             },
     { "SolverOption",      set_solver_option     },
@@ -1555,6 +1661,7 @@ static const luaL_Reg function_table[] {
     { "MultiYieldReactor", add_MultiYieldReactor },
     { "StoicReactor",      add_StoicReactor      },
     { "Calc",              add_Calc              },
+    { "Quantity",          add_quantity          },
     { NULL,                NULL                  }   
 };
 
