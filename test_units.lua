@@ -1,4 +1,5 @@
 ---@diagnostic disable: undefined-global
+
 kinds = {
     massflow = { "kg/hr",    "kg/hr"    },  -- {base_unit_str, default_unit_str}
     massfrac = { "massfrac", "massfrac" },
@@ -42,4 +43,6 @@ units = {
     }
 }
 unitset = UnitSet(kinds, units)
+print(unitset)
 print(unitset.kinds["moleflow"])
+print(unitset.units["kmol/hr"])

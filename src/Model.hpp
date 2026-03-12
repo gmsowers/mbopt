@@ -10,6 +10,7 @@
 #include <optional>
 #include <memory>
 #include <variant>
+#include <algorithm>
 #include "IpIpoptApplication.hpp"
 #include "IpJournalist.hpp"
 
@@ -68,7 +69,6 @@ struct Unit
     {}
 
     string to_str() const;
-    string to_str_2() const;
 };
 
 struct UnitKind
@@ -175,7 +175,7 @@ public:
         {value = convert_from_base(convert_to_base(value_, u));}
     virtual double convert(double value_, const Unit* u) const
         {return (u == unit ? value_ : convert_from_base(convert_to_base(value_, u)));}
-    virtual Ndouble change_unit(Model* m, const string& new_unit_str);
+    virtual void change_unit(Unit* new_unit);
 
     virtual operator double() const
         {return convert_to_base();}
@@ -383,29 +383,34 @@ public:
     Calc(string_view name_,
          Flowsheet*  fs_);
 
-    void initialize() const {
-        string func_name = name + "_init";
-        call_lua_function(func_name);
-    }
-    void eval_constraints() const {
-        string func_name = name + "_eval_constraints";
-        call_lua_function(func_name);
-    }
-    void eval_jacobian() const {
-        string func_name = name + "_eval_jacobian";
-        call_lua_function(func_name);
-    }
-    void eval_hessian() const {
-        if (H.empty()) return;
-        string func_name = name + "_eval_hessian";
-        call_lua_function(func_name);
-    }
-
     void show_variables(ostream& os = cout)   const;
     void show_constraints(ostream& os = cout) const;
     void show_jacobian(ostream& os = cout)    const;
     void show_hessian(ostream& os = cout)     const;
     void show_model(ostream& os = cout)       const {}
+
+private:
+    string make_name(const string& suffix) const {
+        string s = prefix + suffix;
+        std::replace(s.begin(), s.end(), '.', '_');
+        return s;
+    }
+
+public:
+    void initialize() const {
+        call_lua_function(make_name("initialize"));
+    }
+    void eval_constraints() const {
+        call_lua_function(make_name("eval_constraints"));
+    }
+    void eval_jacobian() const {
+        call_lua_function(make_name("eval_jacobian"));
+    }
+    void eval_hessian() const {
+        if (H.empty()) return;
+        call_lua_function(make_name("eval_hessian"));
+    }
+
 
 };
 

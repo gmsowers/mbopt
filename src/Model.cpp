@@ -39,10 +39,6 @@ string Unit::to_str() const {
             (kind->default_unit == this ? "    ✓    " : "         "));
 }
 
-string Unit::to_str_2() const {
-    return units_header + to_str() + '\n' + units_footer;
-}
-
 //---------------------------------------------------------
 
 Unit* UnitSet::add_unit(const string& unit_str,
@@ -78,27 +74,12 @@ void UnitSet::show_units(ostream& os) const {
 
 //---------------------------------------------------------
 
-Ndouble Quantity::change_unit(Model*        m,
-                              const string& new_unit_str) {
-
-    if (new_unit_str == unit->str) return std::nullopt;
-    if (!m->unit_set.units.contains(new_unit_str)) {
-        cerr << format("Error in ChangeUnit(\"{}\", \"{}\"). The new unit \"{}\" is not in the unit set.\n",
-            name, new_unit_str, new_unit_str);
-        return std::nullopt;
+void Quantity::change_unit(Unit* new_unit) {
+    if (new_unit->kind == unit->kind) {
+        auto old_unit = unit;
+        unit = new_unit;
+        convert_and_set(value, old_unit);
     }
-    auto new_unit = m->unit_set.units[new_unit_str].get();
-    if (new_unit->kind != unit->kind) {
-        cerr << format("Error in ChangeUnit(\"{}\", \"{}\"). The new unit \"{}\" is the wrong kind.\n",
-            name, new_unit_str, new_unit_str);
-        cerr << format("      \"{}\" has kind \"{}\", but \"{}\" has kind \"{}\".\n",
-            name, unit->kind->str, new_unit_str, new_unit->kind->str);
-        return std::nullopt;
-    }
-    auto old_unit = unit;
-    unit = new_unit;
-    convert_and_set(value, old_unit);
-    return value;
 }
 
 //---------------------------------------------------------
