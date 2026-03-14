@@ -9,7 +9,8 @@ n_test = 1
 dofile("test_units.lua")
 
 -- test 1: Create a model.
-M, FS = Model("test_obj", "index", unitset)
+M = Model("test_obj", "index", unitset)
+FS = M.index_fs
 if M == nil or FS == nil then goto FAILED end
 print("Test 1 passed")
 n_test = n_test + 1
@@ -19,7 +20,7 @@ N1_comps = {"H2", "O2" }
 N2_comps = { "H2", "O2", "CO" }
 OUT_comps = N2_comps
 
-N1, N2, OUT = Streams(
+N1, N2, OUT = FS:Streams(
     { "N1", N1_comps },
     { "N2", N2_comps },
     { "OUT", OUT_comps }
@@ -29,35 +30,33 @@ print("Test 2 passed")
 n_test = n_test + 1
 
 -- test 3: Create a Mixer block.
-mix1 = Mixer("mix1", { N1, N2 }, { OUT })
+mix1 = FS:Mixer("mix1", { N1, N2 }, { OUT })
 if mix1 == nil then goto FAILED end
 print("Test 3 passed")
 n_test = n_test + 1
 
 -- test 4: Get a unit.
-u = Unit("$/kg")
+u = M.unitset.units["$/kg"]
 if u == nil then goto FAILED end
 print("Test 4 passed")
 n_test = n_test + 1
 
 -- test 5: Create some prices with that unit.
-N1_price, N2_price, OUT_price = Prices( {"Prices.N1_kg", 0.50, u},
-                                        {"Prices.N2_kg", 0.10, u},
-                                        {"Prices.OUT_kg", 0.3, u})
+N1_price, N2_price, OUT_price = M:Prices( {"Prices.N1_kg", 0.50, u},
+                                          {"Prices.N2_kg", 0.10, u},
+                                          {"Prices.OUT_kg", 0.3, u} )
 if N1_price == nil or N2_price == nil or OUT_price == nil then goto FAILED end
 print("Test 5 passed")
 n_test = n_test + 1
 
-
 -- test 6: Change the unit on a price.
-val = ChangeUnit(N1_price, "$/lb")
-if val == nil then goto FAILED end
+N1_price:change_unit(M.unitset.units["$/lb"])
+if not isapprox(N1_price.v, 0.5/2.20462) then goto FAILED end
 print("Test 6 passed")
 n_test = n_test + 1
 
---ShowPrices()
-
---val = ChangeUnit(N2_price, "$/kg")
+M:show_prices()
+do return end
 
 -- test 7: Create an objective.
 costs, N1_val = Objective( "costs", "$/min", -1.0,

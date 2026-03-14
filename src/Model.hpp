@@ -455,18 +455,18 @@ struct Connections
 class Flowsheet
 {
 public:
-    string                        name;
-    Model*                        m;
-    string                        path;
-    string                        prefix;
-    Flowsheet*                    parent;
-    vector<unique_ptr<Flowsheet>> children;
-    vector<unique_ptr<Block>>     blocks;
-    unordered_map<string, Block*> blocks_map;
-    vector<unique_ptr<Calc>>      calcs;
-    unordered_map<string, Calc*>  calcs_map;
-    unordered_map<string,
-        unique_ptr<Stream>>       streams;
+    string                                    name;
+    Model*                                    m;
+    string                                    path;
+    string                                    prefix;
+    Flowsheet*                                parent;
+    vector<unique_ptr<Flowsheet>>             children;
+    unordered_map<string, Flowsheet*>         child_map;
+    vector<unique_ptr<Block>>                 blocks;
+    unordered_map<string, Block*>             blocks_map;
+    vector<unique_ptr<Calc>>                  calcs;
+    unordered_map<string, Calc*>              calcs_map;
+    unordered_map<string, unique_ptr<Stream>> streams;
 
     Flowsheet(string_view name_,
               Model*      m_,

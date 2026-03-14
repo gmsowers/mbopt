@@ -88,6 +88,7 @@ static const char* MT_SOLVER      = "mbopt.Solver";
 static const char* MT_CONSTRAINT  = "mbopt.Constraint";
 static const char* MT_JACOBIAN_NZ = "mbopt.JacobianNZ";
 static const char* MT_HESSIAN_NZ  = "mbopt.HessianNZ";
+static const char* MT_CONNECTION  = "mbopt.Connection";
 
 //---------------------------------------------------------
 
@@ -292,6 +293,18 @@ int show_jacobian(lua_State* L) {
 
 int show_hessian(lua_State* L) {
     return delegate(L, [](auto* p) { p->show_hessian(*OUT); });
+}
+
+int show_connections(lua_State* L) {
+    auto m = check_luaobj<Model>(L, MT_MODEL, 1);
+    m->show_connections(*OUT);
+    return 0;
+}
+
+int show_prices(lua_State* L) {
+    auto m = check_luaobj<Model>(L, MT_MODEL, 1);
+    m->show_prices(*OUT);
+    return 0;
 }
 
 int get_var(lua_State* L) {
@@ -770,6 +783,11 @@ int Model_tostring(lua_State* L) {
     return 1;
 }
 
+int connect(lua_State* L);
+int connect_all(lua_State* L);
+int add_bridge(lua_State* L);
+int add_prices(lua_State* L);
+
 int Model_index(lua_State* L) {
     auto m = check_luaobj<Model>(L, MT_MODEL, 1);
     string key = luaL_checkstring(L, 2);
@@ -784,7 +802,13 @@ int Model_index(lua_State* L) {
     else if (key == "show_constraints")  lua_pushcfunction(L, show_constraints);
     else if (key == "show_variables")  lua_pushcfunction(L, show_variables);
     else if (key == "show_jacobian")  lua_pushcfunction(L, show_jacobian);
+    else if (key == "show_connections")  lua_pushcfunction(L, show_connections);
+    else if (key == "show_prices")  lua_pushcfunction(L, show_prices);
     else if (key == "init" || key == "initialize")     lua_pushcfunction(L, initialize);
+    else if (key == "connect")  lua_pushcfunction(L, connect);
+    else if (key == "connect_all")  lua_pushcfunction(L, connect_all);
+    else if (key == "add_bridge")  lua_pushcfunction(L, add_bridge);
+    else if (key == "Prices")  lua_pushcfunction(L, add_prices);
     else                        lua_pushnil(L);
     return 1;
 }
@@ -833,6 +857,24 @@ int add_streams(lua_State* L) {
     return n_strms;
 }
 
+int add_Flowsheet(lua_State* L) {
+    auto fs = check_luaobj<Flowsheet>(L, MT_FLOWSHEET, 1);
+    string fs_name = luaL_checkstring(L, 2);
+    luaL_argcheck(L, !fs_name.empty(), 2, "Flowsheet name cannot be empty.");
+    auto fs_new = fs->add_flowsheet(fs_name);
+    push_luaobj<Flowsheet>(L, fs_new, MT_FLOWSHEET);
+    return 1;
+}
+
+int get_Flowsheet(lua_State* L) {
+    auto fs = check_luaobj<Flowsheet>(L, MT_FLOWSHEET, 1);
+    string fs_name = luaL_checkstring(L, 2);
+    luaL_argcheck(L, !fs_name.empty(), 2, "Flowsheet name cannot be empty.");
+    luaL_argcheck(L, fs->child_map.contains(fs_name), 2, format("Flowsheet \"{}\" not found.", fs_name).c_str());
+    push_luaobj<Flowsheet>(L, fs->child_map[fs_name], MT_FLOWSHEET);
+    return 1;
+}
+
 int Flowsheet_tostring(lua_State* L) {
     auto fs = check_luaobj<Flowsheet>(L, MT_FLOWSHEET, 1);
     lua_pushstring(L, fs->name.c_str());
@@ -840,6 +882,11 @@ int Flowsheet_tostring(lua_State* L) {
 }
 
 int add_Mixer(lua_State* L);
+int add_Splitter(lua_State* L);
+int add_Separator(lua_State* L);
+int add_YieldReactor(lua_State* L);
+int add_MultiYieldReactor(lua_State* L);
+int add_StoicReactor(lua_State* L);
 int add_Calc(lua_State* L);
 
 int Flowsheet_index(lua_State* L) {
@@ -848,7 +895,14 @@ int Flowsheet_index(lua_State* L) {
     if      (key == "name")        lua_pushstring(L, fs->name.c_str());
     else if (key == "Streams")     lua_pushcfunction(L, add_streams);
     else if (key == "Mixer")       lua_pushcfunction(L, add_Mixer);
+    else if (key == "Splitter")    lua_pushcfunction(L, add_Splitter);
+    else if (key == "Separator")   lua_pushcfunction(L, add_Separator);
+    else if (key == "YieldReactor")   lua_pushcfunction(L, add_YieldReactor);
+    else if (key == "MultiYieldReactor")   lua_pushcfunction(L, add_MultiYieldReactor);
+    else if (key == "StoicReactor")   lua_pushcfunction(L, add_StoicReactor);
     else if (key == "Calc")        lua_pushcfunction(L, add_Calc);
+    else if (key == "Flowsheet")        lua_pushcfunction(L, add_Flowsheet);
+    else if (key == "get_flowsheet")        lua_pushcfunction(L, get_Flowsheet);
     else if (key == "streams") {
         lua_newtable(L);
         for (const auto& [name, strm] : fs->streams) {
@@ -902,26 +956,26 @@ void Stream_register(lua_State* L) {
 //---------------------------------------------------------
 
 void start_Block(lua_State* L, string& blk_name, vector<Stream*>& inlets, vector<Stream*>& outlets) {
-    blk_name = luaL_checkstring(L, 1);               
+    blk_name = luaL_checkstring(L, 2);               
 
     // Table of inlet streams.
-    luaL_checktype(L, 2, LUA_TTABLE);
-    auto n_inlets = lua_rawlen(L, 2);
-    luaL_argcheck(L, n_inlets > 0, 2, "expected table to contain at least one Stream.");
+    luaL_checktype(L, 3, LUA_TTABLE);
+    auto n_inlets = lua_rawlen(L, 3);
+    luaL_argcheck(L, n_inlets > 0, 3, "expected at least one inlet Stream.");
     inlets.resize(n_inlets);
     for (lua_Unsigned i = 1; i <= n_inlets; i++) {
-        inlets[i - 1] = get_luaobj_elem<Stream>(L, 2, i);
-        luaL_argcheck(L, inlets[i - 1] != nullptr, 2, format("element {} to be a Stream.", i).c_str());
+        inlets[i - 1] = get_luaobj_elem<Stream>(L, 3, i);
+        luaL_argcheck(L, inlets[i - 1] != nullptr, 3, format("element {} to be a Stream.", i).c_str());
     }
 
     // Table of outlet streams.
-    luaL_checktype(L, 3, LUA_TTABLE);
-    auto n_outlets = lua_rawlen(L, 3);
-    luaL_argcheck(L, n_outlets > 0, 3, "expected table to contain at least one Stream.");
+    luaL_checktype(L, 4, LUA_TTABLE);
+    auto n_outlets = lua_rawlen(L, 4);
+    luaL_argcheck(L, n_outlets > 0, 4, "expected at least one outlet Stream.");
     outlets.resize(n_outlets);
     for (lua_Unsigned i = 1; i <= n_outlets; i++) {
-        outlets[i - 1] = get_luaobj_elem<Stream>(L, 3, i);
-        luaL_argcheck(L, outlets[i - 1] != nullptr, 3, format("element {} to be a Stream.", i).c_str());
+        outlets[i - 1] = get_luaobj_elem<Stream>(L, 4, i);
+        luaL_argcheck(L, outlets[i - 1] != nullptr, 4, format("element {} to be a Stream.", i).c_str());
     }
 
 }
@@ -943,8 +997,131 @@ int add_Block(lua_State* L, Flowsheet* fs) {
 
 int add_Mixer(lua_State* L) {
     auto fs = check_luaobj<Flowsheet>(L, MT_FLOWSHEET, 1);
-    lua_remove(L, 1);
     return add_Block<Mixer>(L, fs);
+}
+
+int add_Splitter(lua_State* L) {
+    auto fs = check_luaobj<Flowsheet>(L, MT_FLOWSHEET, 1);
+    return add_Block<Splitter>(L, fs);
+}
+
+int add_Separator(lua_State* L) {
+    auto fs = check_luaobj<Flowsheet>(L, MT_FLOWSHEET, 1);
+    return add_Block<Separator>(L, fs);
+}
+
+int add_YieldReactor(lua_State* L) {
+    auto fs = check_luaobj<Flowsheet>(L, MT_FLOWSHEET, 1);
+    return add_Block<YieldReactor>(L, fs);
+}
+
+int add_MultiYieldReactor(lua_State* L) {
+    auto fs = check_luaobj<Flowsheet>(L, MT_FLOWSHEET, 1);
+    string blk_name;
+    vector<Stream*> inlets, outlets;
+    start_Block(L, blk_name, inlets, outlets);
+    auto n_args = lua_gettop(L);
+    auto n_feeds = inlets.size();
+
+    // Reactor name,
+    string reactor_name = luaL_checkstring(L, 5);
+    luaL_argcheck(L, !reactor_name.empty(), 5, "reactor name cannot be empty.");
+
+    // Feed names.
+    vector<string> feed_names(n_feeds);
+    for (int i = 0, j = 6; i < n_feeds; i++, j++) {
+        feed_names[i] = luaL_checkstring(L, j);
+        luaL_argcheck(L, !feed_names[i].empty(), j, "feed name cannot be empty.");
+    }
+
+    return finish_Block<MultiYieldReactor, const string&, const vector<string>&>(L, blk_name, fs, inlets, outlets, reactor_name, feed_names);
+}
+
+int add_StoicReactor(lua_State* L) {
+    auto fs = check_luaobj<Flowsheet>(L, MT_FLOWSHEET, 1);
+    string blk_name;
+    vector<Stream*> inlets, outlets;
+    start_Block(L, blk_name, inlets, outlets);
+
+    auto u_mw_def = fs->m->unit_set.get_default_unit("molewt");
+    Unit* u_mw;
+    bool ok {true};
+
+    // Arg 5 is a table of molecular weights.
+    luaL_argcheck(L, lua_istable(L, 5) && lua_rawlen(L, 5) > 0, 5,
+        "expected a table of one or more molecular weight specifications.");
+    auto n_mw = lua_rawlen(L, 5);
+    unordered_map<string, Quantity> mw {};
+    for (lua_Unsigned i = 1; i <= n_mw; i++) {
+        luaL_argcheck(L, lua_rawgeti(L, 5, i) == LUA_TTABLE, 5,      // Push elem i of MW table, e.g., {"H2", 2.0, "kg/kmol"}
+            format("expected element {} to be a table.", i).c_str());
+        int n_elem = lua_rawlen(L, -1);
+        luaL_argcheck(L, n_elem == 2 || n_elem == 3, 5,
+            format("expected element {} to look like {{component_name, number, unit}}.", i).c_str());
+        string comp_name = get_string_elem(L, -1, 1);
+        luaL_argcheck(L, !comp_name.empty(), 5, format("component name in element {} cannot be empty.", i).c_str());
+        double mw_val = get_double_elem(L, -1, 2, ok);
+        luaL_argcheck(L, ok, 5, format("expected molecular weight in element {} to be a number.", i).c_str());
+        if (n_elem == 3) {
+            auto type = lua_rawgeti(L, -1, 3);
+            if (type == LUA_TSTRING) {
+                string u_str = lua_tostring(L, -1);
+                luaL_argcheck(L, fs->m->unit_set.units.contains(u_str), 5, format("unit \"{}\" not in the unit set.", u_str).c_str());
+                u_mw = fs->m->unit_set.units[u_str].get();
+            } else {
+                u_mw = get_luaobj_elem<Unit>(L, -1, 3);
+                luaL_argcheck(L, u_mw != nullptr, 5, format("expected element {} to look like {{component_name, number, unit}}.", i).c_str());
+            }
+            lua_pop(L, 1);
+        }
+        else
+            u_mw = u_mw_def;
+
+        mw[comp_name] = {mw_val, u_mw};
+        lua_pop(L, 1);   // Pop elem i
+    }
+
+    // Arg 6 is a table of stoichiometric coefficients.
+    luaL_argcheck(L, lua_istable(L, 6) && lua_rawlen(L, 6) > 0, 6,
+        "expected a table of one or more stoichiometric coefficients.");
+    auto n_rx = lua_rawlen(L, 6);
+    vector<unordered_map<string, double>> stoic_coef(n_rx);
+    for (lua_Unsigned i = 1; i <= n_rx; i++) {
+        luaL_argcheck(L, lua_rawgeti(L, 6, i) == LUA_TTABLE, 6,    // Push reaction i, e.g., { {"H2", -1.0}, {"C2H2", -1.0}, {"C2H4", 1.0} }
+            format("expected element {} to be a table.", i).c_str());
+        int n_coef = lua_rawlen(L, -1);
+        luaL_argcheck(L, n_coef > 0, 6, format("expected at least one coefficient in element {}.", i).c_str());
+        for (lua_Unsigned j = 1; j <= n_coef; j++) {
+            luaL_argcheck(L, lua_rawgeti(L, -1, j) == LUA_TTABLE, 6,    // Push stoic coeff j, e.g., {"H2", -1.0}
+                format("expected element {} to be a table.", i).c_str());
+            string comp_name = get_string_elem(L, -1, 1);
+            luaL_argcheck(L, !comp_name.empty(), 6,
+                format("component name in element {} cannot be empty.", i).c_str());
+            double coef = get_double_elem(L, -1, 2, ok);
+            luaL_argcheck(L, ok, 6, format("coefficient in element {} to be a number.", i).c_str());
+            lua_pop(L, 1);                                              // Pop stoic coef j
+            stoic_coef[i - 1][comp_name] = coef;
+        }
+        lua_pop(L, 1);                                             // Pop reaction i
+    }
+    
+    // Arg 7 is a table of conversion specs.
+    luaL_argcheck(L, lua_istable(L, 7) && lua_rawlen(L, 7) > 0, 7,
+        "expected a table of one or more conversion specifications.");
+    auto n_keys = lua_rawlen(L, 7);
+    luaL_argcheck(L, n_keys == n_rx, 7,
+        format("expected {} conversion specifications, got {}.", n_rx, n_keys).c_str());
+    vector<string> conversion_keys(n_keys);
+    for (lua_Unsigned i = 1; i <= n_keys; i++) {
+        string ckey = get_string_elem(L, 7, i);
+        luaL_argcheck(L, !ckey.empty(), 7, "expected a component name.");
+        conversion_keys[i - 1] = ckey;
+    }
+
+    return finish_Block<StoicReactor,
+                        const unordered_map<string, Quantity>&,
+                        const vector<unordered_map<string, double>>&,
+                        const vector<string>&>(L, blk_name, fs, inlets, outlets, mw, stoic_coef, conversion_keys);
 }
 
 int add_Calc(lua_State* L) {
@@ -957,17 +1134,80 @@ int add_Calc(lua_State* L) {
     return 1;
 }
 
+int add_bridge(lua_State* L) {
+    auto m = check_luaobj<Model>(L, MT_MODEL, 1);
+    Stream* strm_from {}, *strm_to {};
+    strm_from = check_luaobj<Stream>(L, MT_STREAM, 2);
+    strm_to   = check_luaobj<Stream>(L, MT_STREAM, 3);
+    bool ok = m->add_bridge(strm_from, strm_to);
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+int connect(lua_State* L) {
+    auto m = check_luaobj<Model>(L, MT_MODEL, 1);
+    auto obj = get_luaobj(L, 2);
+    luaL_argcheck(L, obj != nullptr, 2, "expected a Variable or a Stream.");
+    if (obj->isa<Variable>()) {
+        auto var1 = obj->as<Variable>();
+        auto var2 = check_luaobj<Variable>(L, MT_QUANTITY, 3);
+        luaL_argcheck(L, var2 != nullptr, 3, "expected a Variable.");
+        auto conn = m->add_connection(var1, var2);
+        push_luaobj<Connection>(L, conn, MT_CONNECTION);
+        return 1;
+    }
+    else if (obj->isa<Stream>()) {
+        auto strm = obj->as<Stream>();
+        auto conn = strm->connect();
+        push_luaobj<Connection>(L, conn, MT_CONNECTION);
+        return 1;
+    }
+    return 0;
+}
+
+int connect_all(lua_State* L) {
+    auto m = check_luaobj<Model>(L, MT_MODEL, 1);
+    bool ok = m->index_fs->connect_streams();
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+int add_prices(lua_State* L) {
+    auto m = check_luaobj<Model>(L, MT_MODEL, 1);
+    auto n_args = lua_gettop(L);
+    bool ok {true};
+    for (lua_Unsigned i = 2; i <= n_args; i++) {
+        luaL_argcheck(L, lua_istable(L, i), i, "expected a table.");
+        auto n_elem = lua_rawlen(L, i);    // number of elements in the ith arg, where arg = {price_name, value, unit}
+        luaL_argcheck(L, n_elem == 3, i, "expected a table that looks like {{string, number, Unit}}.");
+        string price_name = get_string_elem(L, i, 1);
+        luaL_argcheck(L, !price_name.empty(), i, "price name cannot be empty.");
+        auto value = get_double_elem(L, i, 2, ok);
+        luaL_argcheck(L, ok, i, "expecting price value to be a number.");
+        auto unit = get_luaobj_elem<Unit>(L, i, 3);
+        luaL_argcheck(L, unit != nullptr, i, "expecting element 3 to be a Unit.");
+
+        auto p = m->add_price(price_name, value, unit);
+        push_luaobj<Quantity, Price>(L, p, MT_QUANTITY);
+    }
+
+    return n_args - 1;
+}
+
 //---------------------------------------------------------
 
 int Block_index(lua_State* L) {
     auto blk = check_luaobj<Block>(L, MT_BLOCK, 1);
     string key = luaL_checkstring(L, 2);
     if      (key == "name")        lua_pushstring(L, blk->name.c_str());
+    else if (key == "init" || key == "initialize") lua_pushcfunction(L, initialize);
     else if (key == "eval_constraints") lua_pushcfunction(L, eval_constraints);
-    else if (key == "show_constraints") lua_pushcfunction(L, show_constraints);
+    else if (key == "eval_jacobian") lua_pushcfunction(L, eval_jacobian);
+    else if (key == "eval_hessian") lua_pushcfunction(L, eval_hessian);
     else if (key == "show_variables") lua_pushcfunction(L, show_variables);
+    else if (key == "show_constraints") lua_pushcfunction(L, show_constraints);
     else if (key == "show_jacobian") lua_pushcfunction(L, show_jacobian);
-    else if (key == "Mixer")       lua_pushcfunction(L, add_Mixer);
+    else if (key == "show_hessian") lua_pushcfunction(L, show_hessian);
     else lua_pushnil(L);
     return 1;
 }

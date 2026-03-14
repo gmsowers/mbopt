@@ -103,7 +103,8 @@ Connection* Stream::connect() {
 Flowsheet* Flowsheet::add_flowsheet(string_view name_) {
     auto fs = make_unique<Flowsheet>(name_, this->m, this);
     auto fs_p = fs.get();
-    this->children.push_back(std::move(fs));
+    children.push_back(std::move(fs));
+    child_map[fs_p->name] = fs_p;
     return fs_p;
 }
 
