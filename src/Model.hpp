@@ -517,19 +517,17 @@ public:
     }
 
     bool connect_streams() {
-        bool ok {true};
-        for (const auto& fs : children)
-            if (!fs->connect_streams())
-                ok = false;
         for (const auto& [name_, strm] : streams)
             if (strm->to != nullptr && strm->from != nullptr) {
                 if (!strm->connect())
-                    ok = false;
+                    return false;
             }
-            else
-                ok = false;
+        for (const auto& fs : children) {
+            if (!fs->connect_streams())
+                return false;
+        }
 
-        return ok;
+        return true;
     }
 
     void show_flowsheet(ostream& os = cout) const;
