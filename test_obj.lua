@@ -56,10 +56,9 @@ print("Test 6 passed")
 n_test = n_test + 1
 
 M:show_prices()
-do return end
 
 -- test 7: Create an objective.
-costs, N1_val = Objective( "costs", "$/min", -1.0,
+costs, N1_val = M:add_objective( "costs", "$/min", -1.0,
     {"N1_val", "mix1.N1.mass", "Prices.N1_kg", "$/hr"}
 )
 if costs == nil or N1_val == nil then goto FAILED end
@@ -67,20 +66,21 @@ print("Test 7 passed")
 n_test = n_test + 1
 
 -- test 8: Add terms to the objective.
-costs, N2_val = Objective( costs,
+N2_val = costs:add_terms(
     {"N2_val", "mix1.N2.mass", "Prices.N2_kg", "$/hr"}
 )
-if costs == nil or N2_val == nil then goto FAILED end
+if N2_val == nil then goto FAILED end
 print("Test 8 passed")
 n_test = n_test + 1
 
-sales, OUT_val = Objective( "sales", "$/hr",
+sales, OUT_val = M:add_objective( "sales", "$/hr",
     {"OUT_val", "mix1.OUT.mass", "Prices.OUT_kg", "$/hr"}
 )
 
-profit = Objective( "profit", "$/min",
+profit = M:add_objective( "profit", "$/min",
     sales,
     costs)
+do return end
 
 SetObjective(profit)
 

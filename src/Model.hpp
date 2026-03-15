@@ -605,6 +605,7 @@ public:
 class Objective : public Quantity 
 {
 public:
+    Model*                                          m     {};
     double                                          scale {1.0};
     unordered_map<string,
                   std::variant<unique_ptr<ObjTerm>,
@@ -613,9 +614,11 @@ public:
     
     Objective() = default;
     Objective(string_view name_,
+              Model*      m_,
               Unit*       unit_,
               double      scale_ = 1.0) :
         Quantity {name_, unit_},
+        m        {m_},
         scale    {scale_}
     {}
 

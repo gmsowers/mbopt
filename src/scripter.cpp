@@ -89,6 +89,8 @@ static const char* MT_CONSTRAINT  = "mbopt.Constraint";
 static const char* MT_JACOBIAN_NZ = "mbopt.JacobianNZ";
 static const char* MT_HESSIAN_NZ  = "mbopt.HessianNZ";
 static const char* MT_CONNECTION  = "mbopt.Connection";
+static const char* MT_OBJECTIVE   = "mbopt.Objective";
+static const char* MT_OBJTERM     = "mbopt.ObjTerm";
 
 //---------------------------------------------------------
 
@@ -757,6 +759,41 @@ void HessianNZ_register(lua_State* L) {
 
 //---------------------------------------------------------
 
+int add_objterms(lua_State* L);
+
+int Objective_index(lua_State* L) {
+    auto obj = check_luaobj<Objective>(L, MT_OBJECTIVE, 1);
+    string key = luaL_checkstring(L, 2);
+    if (key == "v" || key == "value") lua_pushnumber(L, obj->value);
+    else if (key == "add" || key == "add_terms")  lua_pushcfunction(L, add_objterms);
+    else lua_pushnil(L);
+    return 1;
+}
+
+void Objective_register(lua_State* L) {
+    luaL_newmetatable(L, MT_OBJECTIVE);
+    lua_pushcfunction(L, Objective_index); lua_setfield(L, -2, "__index");
+    lua_pop(L, 1);
+}
+
+//---------------------------------------------------------
+
+int ObjTerm_newindex(lua_State* L) {
+    auto objterm = check_luaobj<ObjTerm>(L, MT_OBJTERM, 1);
+    string key = luaL_checkstring(L, 2);
+    if (key == "v" || key == "value") lua_pushnumber(L, objterm->value);
+    else lua_pushnil(L);
+    return 1;
+}
+
+void ObjTerm_register(lua_State* L) {
+    luaL_newmetatable(L, MT_OBJTERM);
+    lua_pushcfunction(L, ObjTerm_newindex); lua_setfield(L, -2, "__newindex");
+    lua_pop(L, 1);
+}
+
+//---------------------------------------------------------
+
 static vector<unique_ptr<Model>> models {};
 
 int Model_new(lua_State* L) {
@@ -787,6 +824,7 @@ int connect(lua_State* L);
 int connect_all(lua_State* L);
 int add_bridge(lua_State* L);
 int add_prices(lua_State* L);
+int add_new_objective(lua_State* L);
 
 int Model_index(lua_State* L) {
     auto m = check_luaobj<Model>(L, MT_MODEL, 1);
@@ -809,6 +847,7 @@ int Model_index(lua_State* L) {
     else if (key == "connect_all")  lua_pushcfunction(L, connect_all);
     else if (key == "add_bridge")  lua_pushcfunction(L, add_bridge);
     else if (key == "Prices")  lua_pushcfunction(L, add_prices);
+    else if (key == "add_objective")  lua_pushcfunction(L, add_new_objective);
     else                        lua_pushnil(L);
     return 1;
 }
@@ -1194,6 +1233,223 @@ int add_prices(lua_State* L) {
     return n_args - 1;
 }
 
+int add_new_objective(lua_State* L) {
+    auto m = check_luaobj<Model>(L, MT_MODEL, 1);
+    auto n_args = lua_gettop(L);
+    int n_start = 2;
+
+    // arg 2 is a new objective name.
+    string obj_name = luaL_checkstring(L, 2);
+    n_start++;
+
+    // arg 3 is a Unit or a unit string.
+    Unit* obj_unit;
+    luaL_argcheck(L, lua_isstring(L, 3) || lua_isuserdata(L, 3), 3, "expected a unit string or a Unit.");
+    if (lua_isstring(L, 3)) {
+        string unit_str = lua_tostring(L, 3);
+        luaL_argcheck(L, !unit_str.empty(), 3, "unit string cannot be empty.");
+        luaL_argcheck(L, m->unit_set.units.contains(unit_str), 3, format("unit \"{}\" not found.", unit_str).c_str());
+        obj_unit = m->unit_set.units[unit_str].get();
+    }
+    else 
+        obj_unit = check_luaobj<Unit>(L, MT_UNIT, 3);
+    n_start++;
+
+    // If arg 4 is a number, it's the objective scale factor.
+    double obj_scale {1.0};
+    if (lua_isnumber(L, 4)) {
+        obj_scale = lua_tonumber(L, 4);
+        n_start++;
+    }
+
+    // Create a new objective function.
+    auto obj = m->add_objective(obj_name, obj_unit, obj_scale);
+
+    // Remaining args are either ObjTerms or existing Objectives or names of existing Objectives.
+    int n_terms = n_args - n_start + 1;
+    vector<std::variant<ObjTerm*, Objective*>> terms(n_terms);
+    for (lua_Unsigned i = n_start; i <= n_args; i++) {
+        if (lua_istable(L, i)) {    // ith arg is a table that defines a ObjTerm
+            const char* msg {"expected a table that looks like {{string, Variable, Price, Unit, <number>}}."};
+            auto n_elem = lua_rawlen(L, i);    // number of elements in the ith arg, where arg = {term_name, Variable, Price, Unit, <scale>}
+            luaL_argcheck(L, n_elem == 4 || n_elem == 5, i, msg);
+            string term_name = get_string_elem(L, i, 1);    // element 1 is an objective term name
+            luaL_argcheck(L, !term_name.empty(), i, "objective term name cannot be empty.");
+            Variable* var;
+            if (lua_rawgeti(L, -1, 2) == LUA_TSTRING) {     // element 2 is a variable name or a Variable
+                lua_pop(L, 1);
+                string var_name = get_string_elem(L, i, 2);
+                luaL_argcheck(L, !var_name.empty(), i, "variable name cannot be empty.");
+                luaL_argcheck(L, m->x_map.contains(var_name), i, format("variable \"{}\" not found.", var_name).c_str());
+                var = m->x_map[var_name];
+            }
+            else {
+                var = get_luaobj_elem<Variable>(L, i, 2);
+                luaL_argcheck(L, var != nullptr, i, "expected a Variable.");
+            }
+
+            Price* price;
+            if (lua_rawgeti(L, -1, 3) == LUA_TSTRING) {     // element 3 is a price name or a Price
+                lua_pop(L, 1);
+                string price_name = get_string_elem(L, i, 3);
+                luaL_argcheck(L, !price_name.empty(), i, "price name cannot be empty.");
+                luaL_argcheck(L, m->prices.contains(price_name), i, format("price \"{}\" not found.", price_name).c_str());
+                price = m->prices[price_name].get();
+            }
+            else {
+                price = get_luaobj_elem<Price>(L, i, 3);
+                luaL_argcheck(L, price != nullptr, i, "expected a Price.");
+            }
+
+            Unit* unit;
+            if (lua_rawgeti(L, -1, 4) == LUA_TSTRING) {     // element 4 is a unit string or a Unit
+                lua_pop(L, 1);
+                string unit_str = get_string_elem(L, i, 4);
+                luaL_argcheck(L, !unit_str.empty(), i, "unit string cannot be empty.");
+                luaL_argcheck(L, m->unit_set.units.contains(unit_str), i, format("unit \"{}\" not found.", unit_str).c_str());
+                unit = m->unit_set.units[unit_str].get();
+            }
+            else {
+                unit = get_luaobj_elem<Unit>(L, i, 4);
+                luaL_argcheck(L, unit != nullptr, i, "expected a Unit.");
+            }
+
+            double scale {1.0};
+            if (n_elem == 5) {                              // element 5, if present, is a scale factor
+                bool ok {true};
+                scale = get_double_elem(L, -1, 5, ok);
+                luaL_argcheck(L, ok, i, "expected scale factor to be a number.");
+            }
+
+            lua_pop(L, 1);                     // pop ith arg
+
+            terms[i - n_start] = obj->add_objterm(term_name, var, price, unit, scale);
+        }
+        else {  // ith arg is an Objective or a name of an Objective
+            Objective* child_obj {};
+            if (lua_isuserdata(L, i))
+                child_obj = check_luaobj<Objective>(L, MT_OBJECTIVE, i);
+            else if (lua_isstring(L, i)) {
+                string child_obj_name = lua_tostring(L, i);
+                luaL_argcheck(L, !child_obj_name.empty(), i, "objective name cannot be empty.");
+                luaL_argcheck(L, m->objectives.contains(child_obj_name), i,
+                    format("Objective \"{}\" not found.", child_obj_name).c_str());
+                child_obj = m->objectives[child_obj_name].get();
+            }
+            else
+                luaL_argerror(L, i, " expected an Objective or the name of an Objective.");
+
+            obj->add_objective(child_obj);
+            terms[i - n_start] = child_obj;
+        }         
+    }
+
+    // Push a pointer to the objective.
+    push_luaobj<Quantity, Objective>(L, obj, MT_OBJECTIVE);
+
+    // Push pointers to the objective terms.
+    for (int i = 0; i < n_terms; i++)
+        if (std::holds_alternative<ObjTerm*>(terms[i]))
+            push_luaobj<Quantity, ObjTerm>(L, std::get<ObjTerm*>(terms[i]), MT_OBJTERM);
+        else
+            push_luaobj<Quantity, Objective>(L, std::get<Objective*>(terms[i]), MT_OBJECTIVE);
+
+    return n_terms + 1;
+}
+
+int add_objterms(lua_State* L) {
+    auto obj = check_luaobj<Objective>(L, MT_OBJECTIVE, 1);
+    auto n_args = lua_gettop(L);
+
+    // Args are either ObjTerms or existing Objectives or names of existing Objectives.
+    int n_terms = n_args - 1;
+    vector<std::variant<ObjTerm*, Objective*>> terms(n_terms);
+    for (lua_Unsigned i = 2; i <= n_args; i++) {
+        if (lua_istable(L, i)) {    // ith arg is a table that defines a ObjTerm
+            const char* msg {"expected a table that looks like {{string, Variable, Price, Unit, <number>}}."};
+            auto n_elem = lua_rawlen(L, i);    // number of elements in the ith arg, where arg = {term_name, Variable, Price, Unit, <scale>}
+            luaL_argcheck(L, n_elem == 4 || n_elem == 5, i, msg);
+            string term_name = get_string_elem(L, i, 1);    // element 1 is an objective term name
+            luaL_argcheck(L, !term_name.empty(), i, "objective term name cannot be empty.");
+            Variable* var;
+            if (lua_rawgeti(L, -1, 2) == LUA_TSTRING) {     // element 2 is a variable name or a Variable
+                lua_pop(L, 1);
+                string var_name = get_string_elem(L, i, 2);
+                luaL_argcheck(L, !var_name.empty(), i, "variable name cannot be empty.");
+                luaL_argcheck(L, obj->m->x_map.contains(var_name), i, format("variable \"{}\" not found.", var_name).c_str());
+                var = obj->m->x_map[var_name];
+            }
+            else {
+                var = get_luaobj_elem<Variable>(L, i, 2);
+                luaL_argcheck(L, var != nullptr, i, "expected a Variable.");
+            }
+
+            Price* price;
+            if (lua_rawgeti(L, -1, 3) == LUA_TSTRING) {     // element 3 is a price name or a Price
+                lua_pop(L, 1);
+                string price_name = get_string_elem(L, i, 3);
+                luaL_argcheck(L, !price_name.empty(), i, "price name cannot be empty.");
+                luaL_argcheck(L, obj->m->prices.contains(price_name), i, format("price \"{}\" not found.", price_name).c_str());
+                price = obj->m->prices[price_name].get();
+            }
+            else {
+                price = get_luaobj_elem<Price>(L, i, 3);
+                luaL_argcheck(L, price != nullptr, i, "expected a Price.");
+            }
+
+            Unit* unit;
+            if (lua_rawgeti(L, -1, 4) == LUA_TSTRING) {     // element 4 is a unit string or a Unit
+                lua_pop(L, 1);
+                string unit_str = get_string_elem(L, i, 4);
+                luaL_argcheck(L, !unit_str.empty(), i, "unit string cannot be empty.");
+                luaL_argcheck(L, obj->m->unit_set.units.contains(unit_str), i, format("unit \"{}\" not found.", unit_str).c_str());
+                unit = obj->m->unit_set.units[unit_str].get();
+            }
+            else {
+                unit = get_luaobj_elem<Unit>(L, i, 4);
+                luaL_argcheck(L, unit != nullptr, i, "expected a Unit.");
+            }
+
+            double scale {1.0};
+            if (n_elem == 5) {                              // element 5, if present, is a scale factor
+                bool ok {true};
+                scale = get_double_elem(L, -1, 5, ok);
+                luaL_argcheck(L, ok, i, "expected scale factor to be a number.");
+            }
+
+            lua_pop(L, 1);                     // pop ith arg
+
+            terms[i - 2] = obj->add_objterm(term_name, var, price, unit, scale);
+        }
+        else {  // ith arg is an Objective or a name of an Objective
+            Objective* child_obj {};
+            if (lua_isuserdata(L, i))
+                child_obj = check_luaobj<Objective>(L, MT_OBJECTIVE, i);
+            else if (lua_isstring(L, i)) {
+                string child_obj_name = lua_tostring(L, i);
+                luaL_argcheck(L, !child_obj_name.empty(), i, "objective name cannot be empty.");
+                luaL_argcheck(L, obj->m->objectives.contains(child_obj_name), i,
+                    format("Objective \"{}\" not found.", child_obj_name).c_str());
+                child_obj = obj->m->objectives[child_obj_name].get();
+            }
+            else
+                luaL_argerror(L, i, " expected an Objective or the name of an Objective.");
+
+            obj->add_objective(child_obj);
+            terms[i - 2] = child_obj;
+        }         
+    }
+
+    // Push pointers to the objective terms.
+    for (int i = 0; i < n_terms; i++)
+        if (std::holds_alternative<ObjTerm*>(terms[i]))
+            push_luaobj<Quantity, ObjTerm>(L, std::get<ObjTerm*>(terms[i]), MT_OBJTERM);
+        else
+            push_luaobj<Quantity, Objective>(L, std::get<Objective*>(terms[i]), MT_OBJECTIVE);
+
+    return n_terms;
+}
+
 //---------------------------------------------------------
 
 int Block_index(lua_State* L) {
@@ -1372,6 +1628,8 @@ void register_objs(lua_State* L) {
     Block_register(L);
     Calc_register(L);
     Solver_register(L);
+    Objective_register(L);
+    ObjTerm_register(L);
 }
 
 lua_State* start_lua() {

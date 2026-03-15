@@ -493,7 +493,7 @@ Price* Model::add_price(string_view name_, double value_, Unit* unit_) {
 }
 
 Objective* Model::add_objective(string_view name_, Unit* unit_, double scale_) {
-    auto obj_ = make_unique<Objective>(name_, unit_, scale_);
+    auto obj_ = make_unique<Objective>(name_, this, unit_, scale_);
     auto obj_p = obj_.get();
     objectives[string(name_)] = std::move(obj_);
     return obj_p;
