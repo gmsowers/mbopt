@@ -80,11 +80,10 @@ sales, OUT_val = M:add_objective( "sales", "$/hr",
 profit = M:add_objective( "profit", "$/min",
     sales,
     costs)
-do return end
 
-SetObjective(profit)
+M.objective = profit
 
-Eval([[
+M:eval([[
     mix1.N1.mass_H2 = 1.0
     mix1.N1.mass_O2 = 1.0
     mix1.N2.mass_H2 = 1.0
@@ -97,13 +96,14 @@ Eval([[
     mix1.OUT.mass   < 4.0
 ]])
 
-Init()
+M:init()
 
-EvalObjective()
-ShowPrices()
-ShowObjective()
-EvalObjGrad()
-ShowObjGrad()
+M:eval_objective()
+M:show_prices()
+M:show_objective()
+M:eval_objgrad()
+M:show_objgrad()
+do return end
 
 Eval([[
     free mix1.N1.mass_H2

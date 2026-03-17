@@ -80,7 +80,7 @@ struct UnitKind
     Unit*  default_unit     {};
 
     string to_str() const {
-        return format("Kind = {}, BaseUnit = {}, DefaultUnit = {}", str, base_unit_str, default_unit_str);
+        return format("kind={}, base Unit={}, default Unit={}", str, base_unit_str, default_unit_str);
     }
 
 };
