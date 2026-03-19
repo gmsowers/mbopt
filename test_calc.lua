@@ -42,7 +42,7 @@ print("Test 4 passed")
 n_test = n_test + 1
 
 -- test 5: Get a unit.
-u = M:get_var("mix1.N1.mass").unit
+u = M:get("mix1.N1.mass").unit
 if u == nil then goto FAILED end
 print("Test 5 passed")
 n_test = n_test + 1
@@ -66,8 +66,8 @@ M:show_constraints()
 
 -- test 8: Add Jacobian nonzeros.
 -- The calc1 constraint is mix1.N1.mass + mix1.N2.mass - calc1.inlet_mass_sum == 0 
-N1_mass = M:get_var("mix1.N1.mass")
-N2_mass = M:get_var("mix1.N2.mass")
+N1_mass = M:get("mix1.N1.mass")
+N2_mass = M:get("mix1.N2.mass")
 if N1_mass == nil or N2_mass == nil then goto FAILED end
 JNZ1, JNZ2, JNZ3 = calc1:add_jacobian_nzs(
         {eq_sum_inlets, N1_mass},
@@ -88,6 +88,7 @@ M:eval([[
 function calc1_initialize()
     inlet_mass_sum.v = N1_mass.bv + N2_mass.bv
 end
+print(calc1)
 M:init()
 M:show_variables()
 

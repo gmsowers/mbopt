@@ -7,6 +7,7 @@ Splitter::Splitter(string_view       name_,
                    vector<Stream*>&& outlets_) : 
                 Block(name_,
                       fs_,
+                      BlockType::Splitter,
                       std::move(inlets_),
                       std::move(outlets_))
 {

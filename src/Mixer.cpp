@@ -7,6 +7,7 @@ Mixer::Mixer(string_view       name_,
              vector<Stream*>&& outlets_):
         Block(name_,
               fs_,
+              BlockType::Mixer,
               std::move(inlets_),
               std::move(outlets_))
 {

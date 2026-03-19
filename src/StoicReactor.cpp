@@ -12,6 +12,7 @@ StoicReactor::StoicReactor(string_view                                  name_,
                           ) : 
                         Block(name_,
                               fs_,
+                              BlockType::StoicReactor,
                               std::move(inlets_),
                               std::move(outlets_)),
                         mw              {mw_},

@@ -35,8 +35,8 @@ R"(└────────────┴───────────�
 
 string Unit::to_str() const {
     return format("│{:12}│{:12}│{}│{}│{}│{}│", str, kind->str, ::str(ratio), ::str(offset),
-            (kind->base_unit == this ? "   ✓  " : "      "),
-            (kind->default_unit == this ? "    ✓    " : "         "));
+            (kind->base_unit == this ? "   x  " : "      "),
+            (kind->default_unit == this ? "    x    " : "         "));
 }
 
 //---------------------------------------------------------
@@ -70,6 +70,16 @@ void UnitSet::show_units(ostream& os) const {
     os << units_footer;
     os << count << " Unit" << (count == 1 ? "" : "s") << " shown\n\n";
     os << std::flush;
+}
+
+//---------------------------------------------------------
+
+string Stream::to_str() const {
+    string s = format("Stream: {}\n  flowsheet: {}\n  from: {}\n  to: {}\n  comps: ", name, fs->name,
+        (from == nullptr ? "nil" : from->name),
+        (to == nullptr ? "nil" : to->name));
+    for (const auto& c : comps) s += c + " ";
+    return s;
 }
 
 //---------------------------------------------------------
@@ -210,12 +220,14 @@ R"(└─────┴──────────────────�
 
 Block::Block(string_view       name_,
              Flowsheet*        fs_,
+             BlockType         blk_type_,
              vector<Stream*>&& inlets_,
              vector<Stream*>&& outlets_) noexcept :
-    name    {name_},
-    fs      {fs_},
-    inlets  {std::move(inlets_)},
-    outlets {std::move(outlets_)}
+    name     {name_},
+    fs       {fs_},
+    blk_type {blk_type_},
+    inlets   {std::move(inlets_)},
+    outlets  {std::move(outlets_)}
 {
     prefix = (fs->name != "index" ? fs->name + "." : "") + name + ".";
     make_all_stream_variables();
@@ -304,6 +316,23 @@ void Block::show_hessian(ostream& os) const {
     os << std::flush;
 }
 
+string Block::to_str() const {
+    string s_type;
+    switch (blk_type) {
+        case BlockType::Mixer:             s_type = "Mixer";             break;
+        case BlockType::Splitter:          s_type = "Splitter";          break;
+        case BlockType::Separator:         s_type = "Separator";         break;
+        case BlockType::YieldReactor:      s_type = "YieldReactor";      break;
+        case BlockType::MultiYieldReactor: s_type = "MultiYieldReactor"; break;
+        case BlockType::StoicReactor:      s_type = "StoicReactor";      break;
+    }
+    string s = format("Block: {}\n  flowsheet: {}\n  type: {}\n  inlets: ", name, fs->name, s_type);
+    for (const auto& sin : inlets) s += sin->name + " ";
+    s += "\n  outlets: ";
+    for (const auto& sout : outlets) s += sout->name + " ";
+    return s;
+}
+
 //---------------------------------------------------------
 
 Calc::Calc(string_view name_,
@@ -360,6 +389,17 @@ void Calc::show_hessian(ostream& os) const {
     os << hess_footer;
     os << count << " Hessian NZ" << (count == 1 ? "" : "s") << " shown\n\n";
     os << std::flush;
+}
+
+void Calc::show_calc(ostream& os) const {
+    os << "Calc: " << name << '\n';
+    os << "  flowsheet: " << fs->name << '\n';
+    os << "  variables:\n";
+    for (const auto& var : x)
+        os << "    " << var->name << '\n';
+    os << "  constraints:\n";
+    for (const auto& con : g)
+        os << "    " << con->name << '\n';
 }
 
 //---------------------------------------------------------

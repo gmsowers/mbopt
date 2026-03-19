@@ -6,6 +6,7 @@ YieldReactor::YieldReactor(string_view       name_,
                            vector<Stream*>&& outlets_) : 
                         Block(name_,
                               fs_,
+                              BlockType::YieldReactor,
                               std::move(inlets_),
                               std::move(outlets_))
 {

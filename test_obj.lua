@@ -103,9 +103,8 @@ M:show_prices()
 M:show_objective()
 M:eval_objgrad()
 M:show_objgrad()
-do return end
 
-Eval([[
+M:eval([[
     free mix1.N1.mass_H2
     fix  mix1.N1.massfrac_H2
     free mix1.N1.mass_O2
@@ -119,37 +118,37 @@ Eval([[
     free  mix1.N2.mass
 ]])
 
+print(M)
 print("Before solve:\n")
-ShowVariables()
-ShowModel()
-EvalObjective()
---EvalObjGrad()
-ShowObjective()
---ShowObjGrad()
+M:show_variables()
+M:eval_objective()
+M:show_objective()
 
---do return end
-SolverOption("hessian_approximation", "exact")
-SolverOption("max_iter", 50)
-SolverOption("derivative_test", "second-order");
-SolverOption("tol", 1.0e-6)
-SolverOption("obj_scaling_factor", -1.0)
-SolverOption("grad_f_constant", "yes")
+solver = Solver()
+if solver == nil then goto FAILED end
+
+solver:set_option("hessian_approximation", "exact")
+solver:set_option("max_iter", 30)
+solver:set_option("derivative_test", "second-order");
+solver:set_option("tol", 1.0e-6)
+solver:set_option("obj_scaling_factor", -1.0)
+solver:set_option("grad_f_constant", "yes")
 
 -- test 9: Initialize the solver.
-status = InitSolver()
+status = solver:init()
 if status ~= 0 then goto FAILED end
 print("Test 9 passed")
 n_test = n_test + 1
 
 -- test 10: Solve the problem.
-status = Solve()
+status = solver:solve(M)
 if status ~= 0 then goto FAILED end
 print("Test 10 passed")
 n_test = n_test + 1
 
 print("After solve:\n")
-ShowVariables()
-ShowObjective()
+M:show_variables()
+M:show_objective()
 
 print(string.format("\nAll %d tests passed\n", n_test - 1))
 do return end

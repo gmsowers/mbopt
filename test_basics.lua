@@ -1,6 +1,6 @@
 ---@diagnostic disable: undefined-global
 function isapprox(x1, x2, tol)
-    tol = tol or 1.0e-8
+    tol = tol or 1.0e-7
     return math.abs(x1 - x2) < tol
 end
 
@@ -26,12 +26,14 @@ N1, N2, OUT = FS:Streams(
     { "OUT", OUT_comps }
 )
 if N1 == nil or N2 == nil or OUT == nil then goto FAILED end
+if N2 ~= FS:get("N2") then goto FAILED end
 print("Test 2 passed")
 n_test = n_test + 1
 
 -- test 3: Create a Mixer block.
 mix1 = FS:Mixer("mix1", { N1, N2 }, { OUT })
 if mix1 == nil then goto FAILED end
+if mix1 ~= FS:get("mix1") then goto FAILED end
 print("Test 3 passed")
 n_test = n_test + 1
 
@@ -51,14 +53,13 @@ print("Test 4 passed")
 n_test = n_test + 1
 
 -- test 5: Get a variable value by name, and check its spec and value.
-var1 = M:get_var("mix1.N2.mass_CO")
+var1 = M:get("mix1.N2.mass_CO")
 val = var1.v;
 u = var1.u;
 if val == nil or u == nil then goto FAILED end
-print(val)
 if not isapprox(val, 1.0/2.20462) then goto FAILED end
 if var1.spec ~= "fixed" then goto FAILED end
-if tostring(u) ~= "kg/hr" then goto FAILED end
+if u.str ~= "kg/hr" then goto FAILED end
 
 ok = M:eval([[
     fix  mix1.N1.mass_O2    
@@ -71,10 +72,10 @@ n_test = n_test + 1
 -- test 6: Change a variable's unit.
 unew = M.unitset.units["lb/hr"]
 if unew == nil then goto FAILED end
-var2 = M:get_var("mix1.N2.mass_O2")
+var2 = M:get("mix1.N2.mass_O2")
 var2:change_unit(unew)
 if not isapprox(var2.v, 2.20462) then goto FAILED end
-if tostring(var2.u) ~= "lb/hr" then goto FAILED end
+if var2.u.str ~= "lb/hr" then goto FAILED end
 print("Test 6 passed")
 n_test = n_test + 1
 

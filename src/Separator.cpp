@@ -7,6 +7,7 @@ Separator::Separator(string_view       name_,
                      vector<Stream*>&& outlets_) : 
                         Block(name_,
                               fs_,
+                              BlockType::Separator,
                               std::move(inlets_),
                               std::move(outlets_))
 {

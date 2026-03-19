@@ -169,21 +169,29 @@ public:
         {return value_ * u->ratio + u->offset;}
     virtual double convert_from_base(double base_value) const
         {return (base_value - unit->offset) / unit->ratio;}
+    virtual double convert_from_base(double base_value, const Unit* u) const
+        {return (base_value - u->offset) / u->ratio;}
     virtual void   convert_and_set(double base_value)
         {value = (base_value - unit->offset) / unit->ratio;}
     virtual void   convert_and_set(double value_, const Unit* u)
         {value = convert_from_base(convert_to_base(value_, u));}
     virtual double convert(double value_, const Unit* u) const
         {return (u == unit ? value_ : convert_from_base(convert_to_base(value_, u)));}
+    virtual double convert(const Unit* u) const
+        {return (u == unit ? value : convert_from_base(convert_to_base(), u));}
     virtual void change_unit(Unit* new_unit);
 
     virtual operator double() const
         {return convert_to_base();}
 
-    string to_str() const {
+    string to_str_2() const {
         return (str(value) + "_" + unit->str);
     }
     
+     string to_str() const {
+         return format("│{:32}│{}│{:8}│", name, str(value), unit->str);
+     }
+
 };
 
 class Variable : public Quantity
@@ -314,6 +322,8 @@ struct Stream
     bool has_comp(string_view c) const {
         return std::ranges::find(comps, c) != comps.end();
     }
+
+    string to_str() const;
 };
 
 //---------------------------------------------------------
@@ -327,23 +337,27 @@ struct StreamVars
 
 //---------------------------------------------------------
 
+enum class BlockType {Mixer, Splitter, Separator, YieldReactor, MultiYieldReactor, StoicReactor};
+
 class Block
 {
 public:
-    string                             name    {};
-    Flowsheet*                         fs      {};
-    vector<Stream*>                    inlets  {};
-    vector<Stream*>                    outlets {};
-    string                             prefix  {};
-    vector<Variable*>                  x       {};
-    unordered_map<Stream*, StreamVars> x_strm  {};
-    vector<Constraint*>                g       {};
-    vector<JacobianNZ*>                J       {};
-    vector<HessianNZ*>                 H       {};
+    string                             name     {};
+    Flowsheet*                         fs       {};
+    BlockType                          blk_type {};
+    vector<Stream*>                    inlets   {};
+    vector<Stream*>                    outlets  {};
+    string                             prefix   {};
+    vector<Variable*>                  x        {};
+    unordered_map<Stream*, StreamVars> x_strm   {};
+    vector<Constraint*>                g        {};
+    vector<JacobianNZ*>                J        {};
+    vector<HessianNZ*>                 H        {};
 
     Block() = default;
     Block(string_view       name_,
           Flowsheet*        fs_,
+          BlockType         blk_type_,
           vector<Stream*>&& inlets_,
           vector<Stream*>&& outlets_) noexcept;
     virtual ~Block()                = default;
@@ -357,6 +371,8 @@ public:
     void show_jacobian(ostream& os = cout)    const;
     void show_hessian(ostream& os = cout)     const;
     void show_model(ostream& os = cout)       const {}
+
+    string to_str() const;
 
 private:
     void make_stream_variables(Stream* strm);
@@ -388,6 +404,8 @@ public:
     void show_jacobian(ostream& os = cout)    const;
     void show_hessian(ostream& os = cout)     const;
     void show_model(ostream& os = cout)       const {}
+
+    void show_calc(ostream& os = cout) const;
 
 private:
     string make_name(const string& suffix) const {
@@ -551,21 +569,23 @@ public:
 
 //---------------------------------------------------------
 
-class Price : public Quantity
-{
-public:
-    Price() = default;
-    Price(string_view name_,
-          double      value_,
-          Unit*       unit_) :
-        Quantity {name_, value_, unit_}
-    {}
+using Price = Quantity;
 
-    string to_str() const {
-        return format("│{:32}│{}│{:8}│", name, str(value), unit->str);
-    }
+// class Price : public Quantity
+// {
+// public:
+//     Price() = default;
+//     Price(string_view name_,
+//           double      value_,
+//           Unit*       unit_) :
+//         Quantity {name_, value_, unit_}
+//     {}
 
-};
+//     string to_str() const {
+//         return format("│{:32}│{}│{:8}│", name, str(value), unit->str);
+//     }
+
+// };
 
 class ObjTerm : public Quantity
 {

@@ -10,6 +10,7 @@ MultiYieldReactor::MultiYieldReactor(string_view           name_,
                                     ) :
                                 Block(name_,
                                       fs_,
+                                      BlockType::MultiYieldReactor,
                                       std::move(inlets_),
                                       std::move(outlets_)),
                                 feed_names {feed_names_}
