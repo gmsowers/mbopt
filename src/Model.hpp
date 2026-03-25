@@ -185,7 +185,7 @@ public:
         {return convert_to_base();}
 
     string to_str_2() const {
-        return (str(value) + "_" + unit->str);
+        return ((name.empty() ? "" : name + " = ") + str(value) + "_" + unit->str);
     }
     
      string to_str() const {
@@ -219,6 +219,11 @@ public:
             str(lower), str(upper), unit->str);
     }
 
+    string to_str_2() const {
+        string gt = (lower.has_value() ? format("{}_{:8} < ", str(lower), unit->str) : "                          ");
+        string lt = (upper.has_value() ? format(" < {}_{:8}", str(upper), unit->str) : "                          ");
+        return format("{}{:32} = {}_{:8}{}   {}", gt, name, str(value), unit->str, lt, (spec == VariableSpec::Fixed ? "fixed" : "free"));
+    }
 };
 
 //---------------------------------------------------------
@@ -241,6 +246,9 @@ struct Constraint
         return format("│{}│{:32}│{}│", str(ix), name, str(value));
     }
 
+    string to_str_2() const {
+        return format("{:32} = {}", name, str(value));
+    }
 };
 
 //---------------------------------------------------------
@@ -318,7 +326,7 @@ struct Stream
         comps {std::move(comps_)}
     {}
 
-    Connection* connect();
+    vector<Connection*> connect();
     bool has_comp(string_view c) const {
         return std::ranges::find(comps, c) != comps.end();
     }
@@ -371,6 +379,7 @@ public:
     void show_jacobian(ostream& os = cout)    const;
     void show_hessian(ostream& os = cout)     const;
     void show_model(ostream& os = cout)       const {}
+    void write_variables(ostream& os = cout)  const;
 
     string to_str() const;
 
@@ -404,8 +413,8 @@ public:
     void show_jacobian(ostream& os = cout)    const;
     void show_hessian(ostream& os = cout)     const;
     void show_model(ostream& os = cout)       const {}
-
-    void show_calc(ostream& os = cout) const;
+    void write_variables(ostream& os = cout)  const;
+    void show_calc(ostream& os = cout)        const;
 
 private:
     string make_name(const string& suffix) const {
@@ -447,6 +456,9 @@ struct Connection
             str(var2->ix), var1->name, var2->name, str(eq->value));
     }
 
+    string to_str_2() const {
+        return format("{} = {}", var1->name, var2->name);
+    }
 };
 
 struct Connections
@@ -537,7 +549,7 @@ public:
     bool connect_streams() {
         for (const auto& [name_, strm] : streams)
             if (strm->to != nullptr && strm->from != nullptr) {
-                if (!strm->connect())
+                if (strm->connect().empty())
                     return false;
             }
         for (const auto& fs : children) {
@@ -570,22 +582,6 @@ public:
 //---------------------------------------------------------
 
 using Price = Quantity;
-
-// class Price : public Quantity
-// {
-// public:
-//     Price() = default;
-//     Price(string_view name_,
-//           double      value_,
-//           Unit*       unit_) :
-//         Quantity {name_, value_, unit_}
-//     {}
-
-//     string to_str() const {
-//         return format("│{:32}│{}│{:8}│", name, str(value), unit->str);
-//     }
-
-// };
 
 class ObjTerm : public Quantity
 {
@@ -673,7 +669,7 @@ class Model : public TNLP
 public:
     string                             name;
     unique_ptr<Flowsheet>              index_fs;
-    UnitSet                            unit_set;
+    UnitSet*                           unit_set;
     Connections                        cnx {};
     vector<unique_ptr<Variable>>       x_vec;
     unordered_map<string, Variable*>   x_map;
@@ -694,9 +690,9 @@ public:
     
     Model(string_view name_,
           string_view index_fs_name,
-          UnitSet&&   unit_set_) noexcept :
+          UnitSet*    unit_set_) noexcept :
         name     {name_},
-        unit_set {std::move(unit_set_)}
+        unit_set {unit_set_}
     {
         index_fs = make_unique<Flowsheet>(index_fs_name, this, nullptr);
     }
@@ -739,7 +735,7 @@ public:
                                ostream&   os = cout) const;
     void        show_obj_grad(ostream& os = cout)    const;
     void        show_units(ostream& os = cout)       const {
-        unit_set.show_units(os);
+        unit_set->show_units(os);
     }
     void        write_variables(ostream& os = cout)  const;
 

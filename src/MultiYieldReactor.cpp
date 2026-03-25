@@ -70,7 +70,7 @@ MultiYieldReactor::MultiYieldReactor(string_view           name_,
         for (const auto& c_in : inlets[i]->comps) {
             auto& y = yf[c_in];
             for (const auto& c_out : outlets[i]->comps) {
-                auto v = m->add_var(prefix + feed_names[i] + "_y_" + c_out + "_from_" + c_in, m->unit_set.get_default_unit("frac"));
+                auto v = m->add_var(prefix + feed_names[i] + "_y_" + c_out + "_from_" + c_in, m->unit_set->get_default_unit("frac"));
                 x.push_back(v);
                 y[c_out] = v;
                 v->fix();
@@ -107,7 +107,7 @@ MultiYieldReactor::MultiYieldReactor(string_view           name_,
     
     // Total feed mass flow rate and an equation to calculate it.
     //    e.g., sum(rx1.Si.mass for Si in inlet streams) - rx1.total_feed_mass == 0
-    auto u_massflow = m->unit_set.get_default_unit("massflow");
+    auto u_massflow = m->unit_set->get_default_unit("massflow");
     x.push_back(total_feed_mass = m->add_var(prefix + "total_feed_mass", u_massflow));
     auto eq = m->add_constraint(prefix + "total_feed_mass_calc");
     g.push_back(eq);
@@ -117,7 +117,7 @@ MultiYieldReactor::MultiYieldReactor(string_view           name_,
 
     // Make the n_*_rx and feed_rate variables and the equations relating them.
     //   e.g., rx1.n_feed1_rx * rx1.feed1_rate - rx1.in1.mass == 0
-    auto u_count = m->unit_set.get_default_unit("count");
+    auto u_count = m->unit_set->get_default_unit("count");
     n_rx.resize(n_feeds);
     feed_rates.resize(n_feeds);
     for (size_t i = 0; i < n_feeds; i++) {

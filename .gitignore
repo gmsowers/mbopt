@@ -5,6 +5,6 @@
 build-macos/
 build-windows/
 build-linux/
-libs/
-include/
 .DS_Store
+src/scripter_func.cpp
+src/FlowsheetRenderer.hpp

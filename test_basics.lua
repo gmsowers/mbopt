@@ -1,4 +1,5 @@
 ---@diagnostic disable: undefined-global
+warn("@on")
 function isapprox(x1, x2, tol)
     tol = tol or 1.0e-7
     return math.abs(x1 - x2) < tol
@@ -39,10 +40,11 @@ n_test = n_test + 1
 
 -- test 4: Evaluate expressions.
 ok = M:eval([[
-    mix1.N1.mass_O2 = 1.0    
+    mix1.N1.mass_O2 = 1.0     -- this is a comment 
     mix1.N1.mass_H2 = 1.0
     mix1.N2.mass_H2 = 1.0
     mix1.N2.mass_O2 = 1.0
+    -- another comment
     mix1.N2.mass_CO = 1.0_lb/hr
     mix1.N2.mass_CO < 1000.0
     free mix1.N1.mass_O2    
@@ -54,12 +56,15 @@ n_test = n_test + 1
 
 -- test 5: Get a variable value by name, and check its spec and value.
 var1 = M:get("mix1.N2.mass_CO")
-val = var1.v;
-u = var1.u;
+val = var1.v
+u = var1.u
+var1.lb = -1000.0
 if val == nil or u == nil then goto FAILED end
 if not isapprox(val, 1.0/2.20462) then goto FAILED end
 if var1.spec ~= "fixed" then goto FAILED end
 if u.str ~= "kg/hr" then goto FAILED end
+print(var1)
+print(M:get("mix1.N2.mass_O2"))
 
 ok = M:eval([[
     fix  mix1.N1.mass_O2    
@@ -86,6 +91,7 @@ print("Test 7 passed")
 n_test = n_test + 1
 
 -- test 8: Make sure an unset lower bound is nil.
+var1.lb = nil
 lb = var1.lb
 if lb ~= nil then goto FAILED end
 print("Test 8 passed")
@@ -128,6 +134,8 @@ n_test = n_test + 1
 
 print("After solve:\n")
 M:show_variables()
+
+--FS:render()
 
 print(string.format("\nAll %d tests passed\n", n_test - 1))
 do return end

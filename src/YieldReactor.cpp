@@ -54,7 +54,7 @@ YieldReactor::YieldReactor(string_view       name_,
     for (const auto& c_in : sin->comps) {
         auto& y = yields[c_in];
         for (const auto& c_out : sout->comps) {
-            auto v = m->add_var(prefix + "y_" + c_out + "_from_" + c_in, m->unit_set.get_default_unit("frac"));
+            auto v = m->add_var(prefix + "y_" + c_out + "_from_" + c_in, m->unit_set->get_default_unit("frac"));
             x.push_back(v);
             y[c_out] = v;
             v->fix();

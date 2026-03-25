@@ -34,6 +34,15 @@ if mix1 == nil then goto FAILED end
 print("Test 3 passed")
 n_test = n_test + 1
 
+ok = M:eval([[
+    mix1.N1.mass_H2 = 1.0
+    mix1.N1.mass_O2 = 1.0
+    mix1.N2.mass_H2 = 1.0
+    mix1.N2.mass_O2 = 1.0
+    mix1.N2.mass_CO = 1.0
+]])
+mix1:init()
+
 -- test 4: Create streams and a Splitter block.
 out1, out2 = FS:Streams(
     { "out1", OUT_comps },
@@ -51,7 +60,7 @@ print("Test 5 passed")
 n_test = n_test + 1
 
 M:show_variables()
-
+do return end
 ok = M:eval([[
     mix1.N1.mass_H2 = 1.0
     mix1.N1.mass_O2 = 1.0

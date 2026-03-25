@@ -79,6 +79,8 @@ string Stream::to_str() const {
         (from == nullptr ? "nil" : from->name),
         (to == nullptr ? "nil" : to->name));
     for (const auto& c : comps) s += c + " ";
+    s.pop_back();
+    s += '\n';
     return s;
 }
 
@@ -94,15 +96,14 @@ void Quantity::change_unit(Unit* new_unit) {
 
 //---------------------------------------------------------
 
-Connection* Stream::connect() {
-    if (!to || !from) return nullptr;
+vector<Connection*> Stream::connect() {
+    vector<Connection*> conn_p {};
+    if (!to || !from) return conn_p;
     auto M = fs->m;
     auto to_sv = to->x_strm[this];
     auto from_sv = from->x_strm[this];
-    Connection* conn_p {};
     for (const auto& c : comps) {
-        conn_p = M->add_connection(to_sv.mass[c], from_sv.mass[c]);
-        if (!conn_p) return nullptr;
+        conn_p.push_back(M->add_connection(to_sv.mass[c], from_sv.mass[c]));
         to_sv.mass[c]->convert_and_set(*from_sv.mass[c]);
     }
     return conn_p;
@@ -247,8 +248,8 @@ void Block::make_stream_variables(Stream* strm)
 
     StreamVars strm_vars {};
 
-    auto u_massflow = m->unit_set.get_default_unit("massflow");
-    auto u_massfrac = m->unit_set.get_default_unit("massfrac");
+    auto u_massflow = m->unit_set->get_default_unit("massflow");
+    auto u_massfrac = m->unit_set->get_default_unit("massfrac");
 
     x.push_back(strm_vars.total_mass = m->add_var(s_prefix + "mass", u_massflow));
 
@@ -316,6 +317,14 @@ void Block::show_hessian(ostream& os) const {
     os << std::flush;
 }
 
+void Block::write_variables(ostream& os) const {
+    os << "Eval([[\n";
+    for (const auto& var : x)
+        os << format("    {:32} = {}_{}\n", var->name, str(var->value), var->unit->str);
+    os << "]])\n";
+    os << std::flush;
+}
+
 string Block::to_str() const {
     string s_type;
     switch (blk_type) {
@@ -330,6 +339,7 @@ string Block::to_str() const {
     for (const auto& sin : inlets) s += sin->name + " ";
     s += "\n  outlets: ";
     for (const auto& sout : outlets) s += sout->name + " ";
+    s += '\n';
     return s;
 }
 
@@ -388,6 +398,14 @@ void Calc::show_hessian(ostream& os) const {
     }
     os << hess_footer;
     os << count << " Hessian NZ" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
+}
+
+void Calc::write_variables(ostream& os) const {
+    os << "Eval([[\n";
+    for (const auto& var : x)
+        os << format("    {:32} = {}_{}\n", var->name, str(var->value), var->unit->str);
+    os << "]])\n";
     os << std::flush;
 }
 
