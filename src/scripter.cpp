@@ -158,7 +158,7 @@ int LuaObj_eq(lua_State* L) {
 
 template <typename T>
 T* get_luaobj_elem(lua_State* L, int index, lua_Integer n) {
-    T* obj;
+    T* obj {nullptr};
     if (lua_rawgeti(L, index, n) == LUA_TUSERDATA) {
         auto luaobj = get_luaobj(L, -1);
         if (luaobj != nullptr)
@@ -170,13 +170,13 @@ T* get_luaobj_elem(lua_State* L, int index, lua_Integer n) {
 
 //---------------------------------------------------------
 
-const std::regex re_binop(R"((\S+)(=|<|>)([^\s_]+)(?:_(\S+))?)");
-const std::regex re_spec(R"((fix|free)\s+(\S+))");
-
 int eval_expr(lua_State* L) {
     auto M = check_luaobj<Model>(L, MT_MODEL, 1);
     string exprs = luaL_checkstring(L, 2);
     std::istringstream expr_stream {exprs};
+
+    const std::regex re_binop(R"((\S+)(=|<|>)([^\s_]+)(?:_(\S+))?)");
+    const std::regex re_spec(R"((fix|free)\s+(\S+))");
 
     bool ok = true;
     string expr_raw;
@@ -253,6 +253,76 @@ int eval_expr(lua_State* L) {
     }
     
     lua_pushboolean(L, ok);
+    return 1;
+}
+
+bool split_reaction(const string& s, string& lhs, string& rhs) {
+    const std::string coef    = R"((?:\d+(?:\.\d+)?)?)";
+    const std::string species = R"([A-Za-z_][A-Za-z0-9_]*)";
+    const std::string term    = coef + species;
+    const std::string side    = term + R"((?:\+)" + term + ")*";
+    const std::string arrow   = "->";
+    const std::regex rxn {"^(" + side + ")" + arrow + "(" + side + ")$"};
+    std::smatch m;
+    if (!std::regex_match(s, m, rxn))
+        return false;
+    lhs = m[1].str();
+    rhs = m[2].str();
+    return true;
+}
+
+unordered_map<string, double> parse_reaction_side(const string& s) {
+    unordered_map<string, double> stoic_coef {};
+    const std::regex re_term {R"((\d+(?:\.\d+)?)?([A-Za-z_][A-Za-z0-9_]*))"};
+    auto term_1 = std::sregex_iterator(s.begin(), s.end(), re_term);
+    auto term_n = std::sregex_iterator();
+    for (auto it = term_1; it != term_n; ++it) {
+        const std::smatch& m = *it;
+        double coef    = m[1].matched ? std::stod(m[1].str()) : 1.0;
+        string species = m[2].str();
+        stoic_coef[species] += coef;
+    }
+    return stoic_coef;
+}
+
+bool parse_reaction(const string& s, unordered_map<string, double>& stoic_coef) {
+    string lhs {}, rhs{};
+    if (!split_reaction(s, lhs, rhs)) return false;
+    auto stoic_coef_lhs = parse_reaction_side(lhs);
+    auto stoic_coef_rhs = parse_reaction_side(rhs);
+    for (const auto& [species, coef] : stoic_coef_lhs)
+        stoic_coef[species] = -coef;
+    for (const auto& [species, coef] : stoic_coef_rhs)
+        stoic_coef[species] += coef;
+    return true;
+}
+
+int eval_reactions(lua_State* L) {
+    string rxns = luaL_checkstring(L, 1);
+    std::istringstream rxn_stream {rxns};
+    vector<unordered_map<string, double>> rxn_stoic_coef {};
+
+    string rxn_raw;
+    while(std::getline(rxn_stream, rxn_raw)) {
+        string rxn_ta = strip_space(rxn_raw);
+        string rxn_ts = trim_sides(rxn_raw);
+        if (rxn_ta.empty()) continue;
+        unordered_map<string, double> stoic_coef {};
+        if (!parse_reaction(rxn_ta, stoic_coef))
+            lua_warning(L, format("reaction \"{}\" is invalid.", rxn_ts).c_str(), 0);
+        else
+            rxn_stoic_coef.push_back(std::move(stoic_coef));
+    }
+
+    lua_newtable(L);
+    for (int i = 0; i < rxn_stoic_coef.size(); i++) {
+        lua_newtable(L);  // ith reaction
+        for (const auto& [species, coef] : rxn_stoic_coef[i]) {
+            lua_pushnumber(L, coef);
+            lua_setfield(L, -2, species.c_str());   // species = coef
+        }
+        lua_seti(L, -2, i + 1);
+    }
     return 1;
 }
 
@@ -542,7 +612,7 @@ int UnitSet_new(lua_State* L) {
         luaL_checktype(L, -1, LUA_TTABLE);      // value is a table of n_units tables
         auto n_units = lua_rawlen(L, -1);       // number of units with this kind
 
-        for (lua_Unsigned i = 1; i <= n_units; i++) {
+        for (int i = 1; i <= n_units; i++) {
             auto type = lua_rawgeti(L, -1, i);      // push the ith unit table
             if (type == LUA_TTABLE) {
                 auto n_elem = lua_rawlen(L, -1);    // number of elements in the ith unit table
@@ -582,17 +652,15 @@ int UnitSet_index(lua_State* L) {
     else if (key == "kinds") {
         lua_newtable(L);
         for (const auto& [kind_str, unit_kind] : us->kinds) {
-            lua_pushstring(L, kind_str.c_str());
             push_luaobj<UnitKind>(L, unit_kind.get(), MT_UNITKIND);
-            lua_settable(L, -3);
+            lua_setfield(L, -2, kind_str.c_str());
         }            
     }
     else if (key == "units") {
         lua_newtable(L);
         for (const auto& [unit_str, unit] : us->units) {
-            lua_pushstring(L, unit_str.c_str());
             push_luaobj<Unit>(L, unit.get(), MT_UNIT);
-            lua_settable(L, -3);
+            lua_setfield(L, -2, unit_str.c_str());
         }            
     }
     else
@@ -785,10 +853,10 @@ int Quantity_value_in(lua_State* L) {
 }
 
 int Quantity_index(lua_State* L) {
-    auto obj = get_luaobj(L, 1);
-    Quantity* q = obj->as<Quantity>();
-    Variable* v = obj->as<Variable>();
-    Objective* o = obj->as<Objective>();
+    const auto obj = get_luaobj(L, 1);
+    const auto q = obj->as<Quantity>();
+    const auto v = obj->as<Variable>();
+    const auto o = obj->as<Objective>();
 
     string key = luaL_checkstring(L, 2);
     if      (key == "v" || key == "value")              lua_pushnumber(L, q->value);
@@ -810,8 +878,8 @@ int Quantity_index(lua_State* L) {
 
 int Quantity_newindex(lua_State* L) {
     auto obj = get_luaobj(L, 1);
-    Quantity* q = obj->as<Quantity>();
-    Variable* v = obj->as<Variable>();
+    auto q = obj->as<Quantity>();
+    auto v = obj->as<Variable>();
 
     string key = luaL_checkstring(L, 2);
     if (key == "bv" || key == "base_value")
@@ -824,7 +892,7 @@ int Quantity_newindex(lua_State* L) {
         string s = luaL_checkstring(L, 3);
         if (s == "fixed") v->fix();
         else if (s == "free") v->free();
-        else lua_warning(L, "variable spec must be \"fixed\" or \"free\".", 0);
+        else lua_warning(L, R"(variable spec must be "fixed" or "free".)", 0);
     }
     else if ((key == "lb" || key == "lower") && v) {
         if (lua_isnil(L, 3))
@@ -1231,9 +1299,8 @@ int Flowsheet_index(lua_State* L) {
     else if (key == "streams") {
         lua_newtable(L);
         for (const auto& [name, strm] : fs->streams) {
-            lua_pushstring(L, name.c_str());
             push_luaobj<Stream>(L, strm.get(), MT_STREAM);
-            lua_settable(L, -3);
+            lua_setfield(L, -2, name.c_str());
         }            
     }
     else lua_pushnil(L);
@@ -1263,9 +1330,8 @@ int Stream_index(lua_State* L) {
     else if (key == "components") {
         lua_newtable(L);
         for (int i = 1; const auto& c : strm->comps) {
-            lua_pushinteger(L, i++);
             lua_pushstring(L, c.c_str());
-            lua_settable(L, -3);
+            lua_seti(L, -2, i++);
         }            
     }
     else lua_pushnil(L);
@@ -1290,7 +1356,7 @@ void start_Block(lua_State* L, string& blk_name, vector<Stream*>& inlets, vector
     auto n_inlets = lua_rawlen(L, 3);
     luaL_argcheck(L, n_inlets > 0, 3, "expected at least one inlet Stream.");
     inlets.resize(n_inlets);
-    for (lua_Unsigned i = 1; i <= n_inlets; i++) {
+    for (int i = 1; i <= n_inlets; i++) {
         inlets[i - 1] = get_luaobj_elem<Stream>(L, 3, i);
         luaL_argcheck(L, inlets[i - 1] != nullptr, 3, format("element {} to be a Stream.", i).c_str());
     }
@@ -1300,7 +1366,7 @@ void start_Block(lua_State* L, string& blk_name, vector<Stream*>& inlets, vector
     auto n_outlets = lua_rawlen(L, 4);
     luaL_argcheck(L, n_outlets > 0, 4, "expected at least one outlet Stream.");
     outlets.resize(n_outlets);
-    for (lua_Unsigned i = 1; i <= n_outlets; i++) {
+    for (int i = 1; i <= n_outlets; i++) {
         outlets[i - 1] = get_luaobj_elem<Stream>(L, 4, i);
         luaL_argcheck(L, outlets[i - 1] != nullptr, 4, format("element {} to be a Stream.", i).c_str());
     }
@@ -1343,17 +1409,16 @@ int add_Separator(lua_State* L) {
 }
 
 int add_YieldReactor(lua_State* L) {
-    auto fs = check_luaobj<Flowsheet>(L, MT_FLOWSHEET, 1);
+    const auto fs = check_luaobj<Flowsheet>(L, MT_FLOWSHEET, 1);
     return add_Block<YieldReactor>(L, fs);
 }
 
 int add_MultiYieldReactor(lua_State* L) {
-    auto fs = check_luaobj<Flowsheet>(L, MT_FLOWSHEET, 1);
+    const auto fs = check_luaobj<Flowsheet>(L, MT_FLOWSHEET, 1);
     string blk_name;
     vector<Stream*> inlets, outlets;
     start_Block(L, blk_name, inlets, outlets);
-    auto n_args = lua_gettop(L);
-    auto n_feeds = inlets.size();
+    const auto n_feeds = inlets.size();
 
     // Reactor name,
     string reactor_name = luaL_checkstring(L, 5);
@@ -1376,62 +1441,54 @@ int add_StoicReactor(lua_State* L) {
     start_Block(L, blk_name, inlets, outlets);
 
     auto u_mw_def = fs->m->unit_set->get_default_unit("molewt");
-    Unit* u_mw;
     bool ok {true};
 
     // Arg 5 is a table of molecular weights.
-    luaL_argcheck(L, lua_istable(L, 5) && lua_rawlen(L, 5) > 0, 5,
-        "expected a table of one or more molecular weight specifications.");
-    auto n_mw = lua_rawlen(L, 5);
+    luaL_checktype(L, 5, LUA_TTABLE);
     unordered_map<string, Quantity> mw {};
-    for (lua_Unsigned i = 1; i <= n_mw; i++) {
-        luaL_argcheck(L, lua_rawgeti(L, 5, i) == LUA_TTABLE, 5,      // Push elem i of MW table, e.g., {"H2", 2.0, "kg/kmol"}
-            format("expected element {} to be a table.", i).c_str());
-        int n_elem = lua_rawlen(L, -1);
-        luaL_argcheck(L, n_elem == 2 || n_elem == 3, 5,
-            format("expected element {} to look like {{component_name, number, unit}}.", i).c_str());
-        string comp_name = get_string_elem(L, -1, 1);
-        luaL_argcheck(L, !comp_name.empty(), 5, format("component name in element {} cannot be empty.", i).c_str());
-        double mw_val = get_double_elem(L, -1, 2, ok);
-        luaL_argcheck(L, ok, 5, format("expected molecular weight in element {} to be a number.", i).c_str());
-        if (n_elem == 3) {
-            auto type = lua_rawgeti(L, -1, 3);
+    lua_pushnil(L);                             // push a nil key to start
+    while (lua_next(L, 5) != 0) {               // pops the key, then pushes next key-value pair
+        Unit* u_mw;
+        double mw_val;
+        string comp_name = lua_tostring(L, -2); // key is comp_name
+        if (lua_istable(L, -1)) {               // value is a number or a table the looks like {number, unit}
+            luaL_argcheck(L, lua_rawlen(L, -1) == 2, 5, "expected molecular weight specification to look like {number, unit}.");
+            mw_val = get_double_elem(L, -1, 1, ok);
+            luaL_argcheck(L, ok, 5, "expected molecular weight to be a number.");
+            auto type = lua_rawgeti(L, -1, 2);  // push element 2 of the table
             if (type == LUA_TSTRING) {
                 string u_str = lua_tostring(L, -1);
                 luaL_argcheck(L, fs->m->unit_set->units.contains(u_str), 5, format("unit \"{}\" not in the unit set.", u_str).c_str());
                 u_mw = fs->m->unit_set->units[u_str].get();
             } else {
-                u_mw = get_luaobj_elem<Unit>(L, -1, 3);
-                luaL_argcheck(L, u_mw != nullptr, 5, format("expected element {} to look like {{component_name, number, unit}}.", i).c_str());
+                u_mw = get_luaobj_elem<Unit>(L, -1, 2);
+                luaL_argcheck(L, u_mw != nullptr, 5, "expected molecular weight specification to look like {number, unit}.");
             }
-            lua_pop(L, 1);
+            lua_pop(L, 1);                      // pop element 2
+        }
+        else if (lua_isnumber(L, -1)) {
+            mw_val = lua_tonumber(L, -1);
+            u_mw = u_mw_def;
         }
         else
-            u_mw = u_mw_def;
-
+            luaL_argerror(L, 5, "expected molecular weight to be a number or a {number, unit} table.");
+            
+        lua_pop(L, 1);                          // pop the value of the current key-value pair
         mw[comp_name] = {mw_val, u_mw};
-        lua_pop(L, 1);   // Pop elem i
     }
 
     // Arg 6 is a table of stoichiometric coefficients.
-    luaL_argcheck(L, lua_istable(L, 6) && lua_rawlen(L, 6) > 0, 6,
-        "expected a table of one or more stoichiometric coefficients.");
+    luaL_checktype(L, 6, LUA_TTABLE);
     auto n_rx = lua_rawlen(L, 6);
     vector<unordered_map<string, double>> stoic_coef(n_rx);
-    for (lua_Unsigned i = 1; i <= n_rx; i++) {
-        luaL_argcheck(L, lua_rawgeti(L, 6, i) == LUA_TTABLE, 6,    // Push reaction i, e.g., { {"H2", -1.0}, {"C2H2", -1.0}, {"C2H4", 1.0} }
+    for (int i = 1; i <= n_rx; i++) {
+        luaL_argcheck(L, lua_rawgeti(L, 6, i) == LUA_TTABLE, 6,    // Push reaction i, e.g., { H2 = -1.0, C2H2 = -1.0, C2H4 = 1.0 }
             format("expected element {} to be a table.", i).c_str());
-        int n_coef = lua_rawlen(L, -1);
-        luaL_argcheck(L, n_coef > 0, 6, format("expected at least one coefficient in element {}.", i).c_str());
-        for (lua_Unsigned j = 1; j <= n_coef; j++) {
-            luaL_argcheck(L, lua_rawgeti(L, -1, j) == LUA_TTABLE, 6,    // Push stoic coeff j, e.g., {"H2", -1.0}
-                format("expected element {} to be a table.", i).c_str());
-            string comp_name = get_string_elem(L, -1, 1);
-            luaL_argcheck(L, !comp_name.empty(), 6,
-                format("component name in element {} cannot be empty.", i).c_str());
-            double coef = get_double_elem(L, -1, 2, ok);
-            luaL_argcheck(L, ok, 6, format("coefficient in element {} to be a number.", i).c_str());
-            lua_pop(L, 1);                                              // Pop stoic coef j
+        lua_pushnil(L);                             // push a nil key to start
+        while (lua_next(L, -2) != 0) {              // pops the key, then pushes next key-value pair
+            string comp_name = lua_tostring(L, -2);
+            double coef = lua_tonumber(L, -1);
+            lua_pop(L, 1);                          // Pop value
             stoic_coef[i - 1][comp_name] = coef;
         }
         lua_pop(L, 1);                                             // Pop reaction i
@@ -1444,7 +1501,7 @@ int add_StoicReactor(lua_State* L) {
     luaL_argcheck(L, n_keys == n_rx, 7,
         format("expected {} conversion specifications, got {}.", n_rx, n_keys).c_str());
     vector<string> conversion_keys(n_keys);
-    for (lua_Unsigned i = 1; i <= n_keys; i++) {
+    for (int i = 1; i <= n_keys; i++) {
         string ckey = get_string_elem(L, 7, i);
         luaL_argcheck(L, !ckey.empty(), 7, "expected a component name.");
         conversion_keys[i - 1] = ckey;
@@ -1489,12 +1546,13 @@ int connect(lua_State* L) {
         return 1;
     }
     else if (obj->isa<Stream>()) {
-        auto strm = obj->as<Stream>();
-        auto conn = strm->connect();
-        if (lua_checkstack(L, conn.size())) {
+        const auto strm = obj->as<Stream>();
+        const auto conn = strm->connect();
+        const int n_conn = static_cast<int>(conn.size());
+        if (lua_checkstack(L, n_conn)) {
             for (const auto& conn_p : conn)
                 push_luaobj<Connection>(L, conn_p, MT_CONNECTION);
-            return conn.size();
+            return n_conn;
         }
         else {
             lua_pushnil(L);
@@ -1515,7 +1573,7 @@ int add_prices(lua_State* L) {
     auto m = check_luaobj<Model>(L, MT_MODEL, 1);
     auto n_args = lua_gettop(L);
     bool ok {true};
-    for (lua_Unsigned i = 2; i <= n_args; i++) {
+    for (int i = 2; i <= n_args; i++) {
         luaL_argcheck(L, lua_istable(L, i), i, "expected a table.");
         auto n_elem = lua_rawlen(L, i);    // number of elements in the ith arg, where arg = {price_name, value, unit}
         luaL_argcheck(L, n_elem == 3, i, "expected a table that looks like {string, number, Unit}.");
@@ -1537,7 +1595,7 @@ int do_add_obj(lua_State* L, Objective* obj, int n_args, int n_start, int n_term
     // Args are either ObjTerms or existing Objectives or names of existing Objectives.
     int top1 = lua_gettop(L);
     vector<std::variant<ObjTerm*, Objective*>> terms(n_terms);
-    for (lua_Unsigned i = n_start; i <= n_args; i++) {
+    for (int i = n_start; i <= n_args; i++) {
         if (lua_istable(L, i)) {    // ith arg is a table that defines an ObjTerm
             const char* msg {"expected a table that looks like {string, Variable, Price, Unit, <number>}."};
             auto n_elem = lua_rawlen(L, i);    // number of elements in the ith arg, where arg = {term_name, Variable, Price, Unit, <scale>}
@@ -1733,7 +1791,7 @@ int add_variables(lua_State* L) {
     auto calc_p = check_luaobj<Calc>(L, MT_CALC, 1);
     auto M = calc_p->fs->m;
     auto n_args = lua_gettop(L);
-    for (lua_Unsigned i = 2; i <= n_args; i++) {
+    for (int i = 2; i <= n_args; i++) {
         luaL_checktype(L, i, LUA_TTABLE);
         auto n_elem = lua_rawlen(L, i);    // number of elements in the ith argument table
         luaL_argcheck(L, n_elem == 2, i, format("expected argument {} to look like {{string, Unit}}.", i).c_str());
@@ -1753,7 +1811,7 @@ int add_constraints(lua_State* L) {
     auto calc_p = check_luaobj<Calc>(L, MT_CALC, 1);
     auto M = calc_p->fs->m;
     auto n_args = lua_gettop(L);
-    for (lua_Unsigned i = 2; i <= n_args; i++) {
+    for (int i = 2; i <= n_args; i++) {
         string eq_name = luaL_checkstring(L, i);
         luaL_argcheck(L, !eq_name.empty(), i, "constraint name cannot be empty.");
         auto eq = M->add_constraint(calc_p->prefix + eq_name);
@@ -1768,7 +1826,7 @@ int add_jacobian_nzs(lua_State* L) {
     auto calc_p = check_luaobj<Calc>(L, MT_CALC, 1);
     auto M = calc_p->fs->m;
     auto n_args = lua_gettop(L);
-    for (lua_Unsigned i = 2; i <= n_args; i++) {
+    for (int i = 2; i <= n_args; i++) {
         luaL_checktype(L, i, LUA_TTABLE);
         auto n_elem = lua_rawlen(L, i);    // number of elements in the ith JNZ list
         luaL_argcheck(L, n_elem == 2, i, format("expected argument {} to look like {{Constraint, Variable}}.", i).c_str());
@@ -1788,7 +1846,7 @@ int add_hessian_nzs(lua_State* L) {
     auto calc_p = check_luaobj<Calc>(L, MT_CALC, 1);
     auto M = calc_p->fs->m;
     auto n_args = lua_gettop(L);
-    for (lua_Unsigned i = 2; i <= n_args; i++) {
+    for (int i = 2; i <= n_args; i++) {
         luaL_checktype(L, i, LUA_TTABLE);
         auto n_elem = lua_rawlen(L, i);    // number of elements in the ith HNZ list
         luaL_argcheck(L, n_elem == 3, i, format("expected argument {} to look like {{Constraint, Variable, Variable}}.", i).c_str());
@@ -1902,14 +1960,15 @@ LuaResult run_lua_script(lua_State* L, const char* script_file_name) {
     return {.ok = true, .err_str = ""};
 }
 
-static const luaL_Reg function_table[] {
+static constexpr luaL_Reg function_table[] {
     { "UnitSet",           UnitSet_new           },
     { "Quantity",          Quantity_new          },
     { "Q",                 Quantity_new          },
     { "Model",             Model_new             },
     { "Solver",            Solver_new            },
     { "Output",            set_output            },
-    { NULL,                NULL                  }   
+    { "Reactions",         eval_reactions        },
+    { nullptr,             nullptr               }
 };
 
 void register_objs(lua_State* L) {
