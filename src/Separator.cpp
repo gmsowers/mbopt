@@ -60,7 +60,7 @@ Separator::Separator(string_view       name_,
     for (const auto& c : sin->comps)
         for (const auto& sout : outlets)
             if (sout->has_comp(c)) {
-                auto v = m->add_var(prefix + sout->name + ".split_" + c, m->unit_set->get_default_unit("frac"));
+                auto v = m->add_var(prefix + sout->name + ".split_" + c, m->unitset->get_default_unit("frac"));
                 x.push_back(v);
                 x_split.push_back(v);
                 eq = m->add_constraint(prefix + sout->name + "_split_" + c + "_def");

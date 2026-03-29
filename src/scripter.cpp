@@ -1,5 +1,5 @@
 #include <sstream>
-#include <fstream>
+#include <fstream> // IWYU pragma: keep
 #include <regex>
 #include <charconv>
 #include <typeindex>
@@ -120,28 +120,11 @@ struct LuaObj {
 
 };
 
-bool operator==(const LuaObj& a, const LuaObj& b) {
-    return a.obj_p == b.obj_p;
-}
-
-bool operator!=(const LuaObj& a, const LuaObj& b) {
-    return a.obj_p != b.obj_p;
-}
-
-template <typename BaseT, typename DerivedT = void>
-void push_luaobj(lua_State* L, void* p, const char* mt) {
-    if (!p) { lua_pushnil(L); return; }
-    void* luaobj_p = lua_newuserdatauv(L, sizeof(LuaObj), 0);
-    new (luaobj_p) LuaObj(p, typeid(BaseT), typeid(DerivedT));
-    luaL_getmetatable(L, mt);
-    lua_setmetatable(L, -2);
-}
-
 template <typename T>
 T* check_luaobj(lua_State* L, const char* mt, int arg) {
     auto luaobj = static_cast<LuaObj*>(luaL_checkudata(L, arg, mt));
     T* cppobj = luaobj->as<T>();
-    luaL_argcheck(L, cppobj != nullptr, arg, "failed to convert the object to the target type.");
+    luaL_argcheck(L, cppobj != nullptr, arg, format("failed to cast the Lua object to {}", mt).c_str());
     return cppobj;
 }
 
@@ -149,22 +132,32 @@ LuaObj* get_luaobj(lua_State* L, int index) {
     return static_cast<LuaObj*>(lua_touserdata(L, index));
 }
 
+template <typename BaseT, typename DerivedT = void>
+void push_luaobj(lua_State* L, void* p, const char* mt) {
+    if (!p) { lua_pushnil(L); return; }
+    void* luaobj_p = lua_newuserdatauv(L, sizeof(LuaObj), 0);   // push new userdata
+    new (luaobj_p) LuaObj(p, typeid(BaseT), typeid(DerivedT));
+    luaL_getmetatable(L, mt);                                   // push the metatable bound to mt
+    lua_setmetatable(L, -2);                                    // pop the metatable bound to mt and set the userdata's metatable to it
+                                                                // new userdata left on top of the stack
+}
+
 int LuaObj_eq(lua_State* L) {
     auto a = get_luaobj(L, 1);
     auto b = get_luaobj(L, 2);
-    lua_pushboolean(L, *a == *b);
+    lua_pushboolean(L, a->obj_p == b->obj_p);
     return 1;
 }
 
 template <typename T>
 T* get_luaobj_elem(lua_State* L, int index, lua_Integer n) {
     T* obj {nullptr};
-    if (lua_rawgeti(L, index, n) == LUA_TUSERDATA) {
+    if (lua_rawgeti(L, index, n) == LUA_TUSERDATA) {    // push element n
         auto luaobj = get_luaobj(L, -1);
         if (luaobj != nullptr)
             obj = luaobj->as<T>();
     }
-    lua_pop(L, 1);
+    lua_pop(L, 1);                                      // pop element n
     return obj;
 }
 
@@ -193,7 +186,7 @@ int eval_expr(lua_State* L) {
             auto lhs_var = M->var(lhs);
             if (lhs_var == nullptr) {
                 ok = false;
-                lua_warning(L, format("in expression \"{}\" the variable \"{}\" is not in the model.", expr_ts, lhs).c_str(), 0);
+                lua_warning(L, format("the Variable \"{}\" used in expression \"{}\" is not in the Model.", lhs, expr_ts).c_str(), 0);
                 continue;
             }
             
@@ -207,11 +200,11 @@ int eval_expr(lua_State* L) {
             else if (is_number(rhs, rhs_value)) {
                 if (m[4].matched) {
                     auto rhs_unit_str = m[4].str();
-                    auto rhs_unit = (M->unit_set->units.contains(rhs_unit_str) ? M->unit_set->units[rhs_unit_str].get() : nullptr);
+                    auto rhs_unit = (M->unitset->units.contains(rhs_unit_str) ? M->unitset->units[rhs_unit_str].get() : nullptr);
                     if (rhs_unit == nullptr) {
                         ok = false;
-                        lua_warning(L, format("in expression \"{}\" the unit \"{}\" is not in the unitset.",
-                            expr_ts, rhs_unit_str).c_str(), 0);
+                        lua_warning(L, format("the Unit \"{}\" used in expression \"{}\" is not in the UnitSet.",
+                            rhs_unit_str, expr_ts).c_str(), 0);
                         continue;
                     }
                     rhs_value = lhs_var->convert(rhs_value, rhs_unit);
@@ -219,7 +212,7 @@ int eval_expr(lua_State* L) {
             }
             else {
                 ok = false;
-                lua_warning(L, format("the right-hand side of expression \"{}\" is invalid.", expr_ts).c_str(), 0);
+                lua_warning(L, format("syntax error on the right-hand side of expression \"{}\".", expr_ts).c_str(), 0);
                 continue;
             }
 
@@ -237,7 +230,7 @@ int eval_expr(lua_State* L) {
             auto rhs_var = M->var(rhs);
             if (rhs_var == nullptr) {
                 ok = false;
-                lua_warning(L, format("in expression \"{}\" the variable \"{}\" is not in the model.", expr_ts, rhs).c_str(), 0);
+                lua_warning(L, format("the Variable \"{}\" used in expression \"{}\" is not in the Model.", rhs, expr_ts).c_str(), 0);
                 continue;
             }
             
@@ -248,7 +241,7 @@ int eval_expr(lua_State* L) {
         }
         else {
             ok = false;
-            lua_warning(L, format("the expression \"{}\" is invalid.", expr_ts).c_str(), 0);
+            lua_warning(L, format("syntax error in the expression \"{}\".", expr_ts).c_str(), 0);
         }
     }
     
@@ -309,7 +302,7 @@ int eval_reactions(lua_State* L) {
         if (rxn_ta.empty()) continue;
         unordered_map<string, double> stoic_coef {};
         if (!parse_reaction(rxn_ta, stoic_coef))
-            lua_warning(L, format("reaction \"{}\" is invalid.", rxn_ts).c_str(), 0);
+            lua_warning(L, format("syntax error in reaction \"{}\".", rxn_ts).c_str(), 0);
         else
             rxn_stoic_coef.push_back(std::move(stoic_coef));
     }
@@ -437,11 +430,17 @@ int show_obj_grad(lua_State* L) {
     return 0;
 }
 
-int change_unit(lua_State* L) {
-    auto q = check_luaobj<Quantity>(L, MT_QUANTITY, 1);
-    auto u = check_luaobj<Unit>(L, MT_UNIT, 2);
+void change_unit(lua_State* L, Quantity* q, int index) {
+    Unit* u {nullptr};
+    if (lua_isstring(L, index)) {
+        string unit_str = lua_tostring(L, index);
+        const auto& units_ = q->unit->unitset->units;
+        luaL_argcheck(L, units_.contains(unit_str), index, format("Unit \"{}\" is not in the UnitSet.", unit_str).c_str());
+        u = units_.at(unit_str).get();
+    }
+    else
+        u = check_luaobj<Unit>(L, MT_UNIT, index);
     q->change_unit(u);
-    return 0;
 }
 
 //---------------------------------------------------------
@@ -501,11 +500,12 @@ int Unit_tostring(lua_State* L) {
 int Unit_index(lua_State* L) {
     auto u = check_luaobj<Unit>(L, MT_UNIT, 1);
     string key = luaL_checkstring(L, 2);
-    if      (key == "kind")   push_luaobj<UnitKind>(L, u->kind, MT_UNITKIND);
-    else if (key == "str")    lua_pushstring(L, u->str.c_str());
-    else if (key == "ratio")  lua_pushnumber(L, u->ratio);
-    else if (key == "offset") lua_pushnumber(L, u->offset);
-    else                      lua_pushnil(L);
+    if      (key == "kind")    push_luaobj<UnitKind>(L, u->kind, MT_UNITKIND);
+    else if (key == "unitset") push_luaobj<UnitSet>(L, u->unitset, MT_UNITSET);
+    else if (key == "str")     lua_pushstring(L, u->str.c_str());
+    else if (key == "ratio")   lua_pushnumber(L, u->ratio);
+    else if (key == "offset")  lua_pushnumber(L, u->offset);
+    else                       lua_pushnil(L);
     return 1;
 }
 
@@ -554,7 +554,7 @@ int add_kind(lua_State* L) {
     string default_unit_str = luaL_optstring(L, 4, base_unit_str.c_str());    // arg 4 is a default unit string
     auto ukind = us->add_kind(kind_str, base_unit_str, default_unit_str);
     if (ukind == nullptr)
-        luaL_error(L, "failed to create a UnitKind.");
+        luaL_error(L, "failed to create a new UnitKind.");
     else
         push_luaobj<UnitKind>(L, ukind, MT_UNITKIND);
     return 1;
@@ -568,7 +568,7 @@ int add_unit(lua_State* L) {
     double unit_offset = luaL_optnumber(L, 5, 0.0);     // arg 5 is a unit offset
     auto unit = us->add_unit(unit_str, kind_str, unit_ratio, unit_offset);
     if (unit == nullptr)
-        luaL_argerror(L, 2, format("kind \"{}\" not found in UnitSet.", kind_str).c_str());
+        luaL_argerror(L, 2, format("kind \"{}\" is not in the UnitSet.", kind_str).c_str());
     else
         push_luaobj<Unit>(L, unit, MT_UNIT);
     return 1;
@@ -679,36 +679,6 @@ void UnitSet_register(lua_State* L) {
 
 //---------------------------------------------------------
 
-class LuaStreambuf : public std::streambuf {
-    lua_State* L;
-    std::string buffer;
-
-    void flush_to_lua() {
-        if (buffer.empty()) return;
-        lua_getglobal(L, "io");
-        lua_getfield(L, -1, "write");
-        lua_remove(L, -2);
-        lua_pushstring(L, buffer.c_str());
-        lua_pcall(L, 1, 0, 0);
-        buffer.clear();
-    }
-
-protected:
-    int overflow(int c) override {
-        if (c != EOF)
-            buffer += static_cast<char>(c);
-        return c;
-    }
-
-    int sync() override {
-        flush_to_lua();
-        return 0;
-    }
-    
-public:
-    LuaStreambuf(lua_State* L_) : L(L_) {}
-};
-
 class LuaJournal : public Ipopt::Journal {
     lua_State* L;
 protected:
@@ -734,20 +704,33 @@ public:
 using Solver = IpoptApplication;
 static Solver* solver;
 
+int Solver_new(lua_State* L) {
+    solver = IpoptApplicationFactory();
+    if (std::getenv("JPY_PARENT_PID") != nullptr) {
+        solver->Jnlst()->DeleteAllJournals();
+        solver->Jnlst()->AddJournal(new LuaJournal(L));
+    }
+    push_luaobj<Solver>(L, solver, MT_SOLVER);
+    return 1;
+}
+
 int Solver_set_option(lua_State* L) {
     auto slv = check_luaobj<Solver>(L, MT_SOLVER, 1);
-    luaL_checkany(L, 3);
     string option = luaL_checkstring(L, 2);
-    if (!slv) return 0;
-    if (lua_isinteger(L, 3)) {
-        slv->Options()->SetIntegerValue(option, lua_tointeger(L, 3));
+    luaL_checkany(L, 3);
+    auto type = lua_type(L, 3);
+    if (type == LUA_TNUMBER) {
+        if (lua_isinteger(L, 3))
+            slv->Options()->SetIntegerValue(option, lua_tointeger(L, 3));
+        else
+            slv->Options()->SetNumericValue(option, lua_tonumber(L, 3));
     }
-    else if (lua_isnumber(L, 3)) {
-        slv->Options()->SetNumericValue(option, lua_tonumber(L, 3));
-    }
-    else if (lua_isstring(L, 3)) {
+    else if (type == LUA_TSTRING) {
         slv->Options()->SetStringValue(option, lua_tostring(L, 3));
     }
+    else
+        luaL_argerror(L, 3, "expected a string, integer, or double.");
+
     return 0;
 }
 
@@ -759,35 +742,24 @@ int Solver_initialize(lua_State* L) {
 
 int Solver_tostring(lua_State* L) {
     auto slv = check_luaobj<Solver>(L, MT_SOLVER, 1);
-    lua_pushstring(L, "Solver: Ipopt");
+    lua_pushstring(L, "Ipopt");
     return 1;
 }
 
 int Solver_solve(lua_State* L) {
     auto slv = check_luaobj<Solver>(L, MT_SOLVER, 1);
-    auto M = check_luaobj<Model>(L, MT_MODEL, 2);
-    int retval = slv->OptimizeTNLP(M);
-    lua_pushinteger(L, retval);
-    return 1;
-}
-
-int Solver_new(lua_State* L) {
-    solver = IpoptApplicationFactory();
-    if (std::getenv("JPY_PARENT_PID") != nullptr) {
-        solver->Jnlst()->DeleteAllJournals();
-        solver->Jnlst()->AddJournal(new LuaJournal(L));
-    }
-    push_luaobj<Solver>(L, solver, MT_SOLVER);
+    auto M   = check_luaobj<Model>(L, MT_MODEL, 2);
+    lua_pushinteger(L, slv->OptimizeTNLP(M));
     return 1;
 }
 
 int Solver_index(lua_State* L) {
     auto slv = check_luaobj<Solver>(L, MT_SOLVER, 1);
     string key = luaL_checkstring(L, 2);
-    if (key == "init" || key == "initialize") lua_pushcfunction(L, Solver_initialize);
-    else if (key == "set_option")             lua_pushcfunction(L, Solver_set_option);
-    else if (key == "solve")                  lua_pushcfunction(L, Solver_solve);
-    else                                      lua_pushnil(L);
+    if      (key == "init" || key == "initialize") lua_pushcfunction(L, Solver_initialize);
+    else if (key == "set_option")                  lua_pushcfunction(L, Solver_set_option);
+    else if (key == "solve")                       lua_pushcfunction(L, Solver_solve);
+    else                                           lua_pushnil(L);
 
     return 1;
 }
@@ -845,11 +817,45 @@ int Quantity_tostring(lua_State* L) {
     return 1;
 }
 
+double Quantity_convert_value(lua_State* L, Quantity* q, double val, int index) {
+    Unit* u {nullptr};
+    if (lua_isstring(L, index)) {
+        const auto& units_ = q->unit->unitset->units;
+        string u_str = lua_tostring(L, index);
+        luaL_argcheck(L, units_.contains(u_str), index, format("Unit \"{}\" is not in the UnitSet.", u_str).c_str());
+        u = units_.at(u_str).get();
+    }
+    else
+        u = check_luaobj<Unit>(L, MT_UNIT, index);
+
+    return q->convert(val, u);
+}
+
 int Quantity_value_in(lua_State* L) {
     auto q = check_luaobj<Quantity>(L, MT_QUANTITY, 1);
-    auto u  = check_luaobj<Unit>(L, MT_UNIT, 2);
-    lua_pushnumber(L, q->convert(u));
+    lua_pushnumber(L, Quantity_convert_value(L, q, q->value, 2));
     return 1;
+}
+
+int Quantity_set_value(lua_State* L) {
+    auto q = check_luaobj<Quantity>(L, MT_QUANTITY, 1);
+    auto val = luaL_checknumber(L, 2);
+    q->value = Quantity_convert_value(L, q, val, 3);
+    return 0;
+}
+
+int Variable_set_lower(lua_State* L) {
+    auto v = check_luaobj<Variable>(L, MT_QUANTITY, 1);
+    auto val = luaL_checknumber(L, 2);
+    v->lower = Quantity_convert_value(L, v, val, 3);
+    return 0;
+}
+
+int Variable_set_upper(lua_State* L) {
+    auto v = check_luaobj<Variable>(L, MT_QUANTITY, 1);
+    auto val = luaL_checknumber(L, 2);
+    v->upper = Quantity_convert_value(L, v, val, 3);
+    return 0;
 }
 
 int Quantity_index(lua_State* L) {
@@ -859,19 +865,21 @@ int Quantity_index(lua_State* L) {
     const auto o = obj->as<Objective>();
 
     string key = luaL_checkstring(L, 2);
-    if      (key == "v" || key == "value")              lua_pushnumber(L, q->value);
-    else if (key == "u" || key == "unit")               push_luaobj<Unit>(L, q->unit, MT_UNIT);
-    else if (key == "bv" || key == "base_value")        lua_pushnumber(L, q->convert_to_base());
-    else if (key == "bu" || key == "base_unit")         push_luaobj<Unit>(L, q->unit->kind->base_unit, MT_UNIT);
-    else if (key == "vin" || key == "value_in")         lua_pushcfunction(L, Quantity_value_in);
-    else if ((key == "lb" || key == "lower") && v)      if (v->lower.has_value()) lua_pushnumber(L, v->lower.value()); else lua_pushnil(L);
-    else if ((key == "ub" || key == "upper") && v)      if (v->upper.has_value()) lua_pushnumber(L, v->upper.value()); else lua_pushnil(L);
-    else if (key == "spec" && v)                        lua_pushstring(L, (v->is_fixed() ? "fixed" : "free"));
-    else if (key == "fix" && v)                         lua_pushcfunction(L, fix_var);
-    else if (key == "free" && v)                        lua_pushcfunction(L, free_var);
-    else if (key == "change_unit")                      lua_pushcfunction(L, change_unit);
-    else if ((key == "add" || key == "add_terms") && o) lua_pushcfunction(L, add_objterms);
-    else                                                lua_pushnil(L);
+    if      (key == "v" || key == "value")                 lua_pushnumber(L, q->value);
+    else if (key == "u" || key == "unit")                  push_luaobj<Unit>(L, q->unit, MT_UNIT);
+    else if (key == "bv" || key == "base_value")           lua_pushnumber(L, q->convert_to_base());
+    else if (key == "bu" || key == "base_unit")            push_luaobj<Unit>(L, q->unit->kind->base_unit, MT_UNIT);
+    else if (key == "vin" || key == "value_in")            lua_pushcfunction(L, Quantity_value_in);
+    else if ((key == "lb" || key == "lower") && v)         if (v->lower.has_value()) lua_pushnumber(L, v->lower.value()); else lua_pushnil(L);
+    else if ((key == "ub" || key == "upper") && v)         if (v->upper.has_value()) lua_pushnumber(L, v->upper.value()); else lua_pushnil(L);
+    else if (key == "spec" && v)                           lua_pushstring(L, (v->is_fixed() ? "fixed" : "free"));
+    else if (key == "fix" && v)                            lua_pushcfunction(L, fix_var);
+    else if (key == "free" && v)                           lua_pushcfunction(L, free_var);
+    else if ((key == "add" || key == "add_terms") && o)    lua_pushcfunction(L, add_objterms);
+    else if (key == "set_v" || key == "set_value")         lua_pushcfunction(L, Quantity_set_value);
+    else if ((key == "set_lb" || key == "set_lower") && v) lua_pushcfunction(L, Variable_set_lower);
+    else if ((key == "set_ub" || key == "set_upper") && v) lua_pushcfunction(L, Variable_set_upper);
+    else                                                   lua_pushnil(L);
 
     return 1;
 }
@@ -887,12 +895,12 @@ int Quantity_newindex(lua_State* L) {
     else if (key == "v" || key == "value")
         q->value = luaL_checknumber(L, 3);
     else if (key == "u" || key == "unit")
-        q->change_unit(check_luaobj<Unit>(L, MT_UNIT, 3));
+        change_unit(L, q, 3);
     else if (key == "spec" && v) {
         string s = luaL_checkstring(L, 3);
-        if (s == "fixed") v->fix();
+        if      (s == "fixed") v->fix();
         else if (s == "free") v->free();
-        else lua_warning(L, R"(variable spec must be "fixed" or "free".)", 0);
+        else    lua_warning(L, R"(variable spec must be "fixed" or "free".)", 0);
     }
     else if ((key == "lb" || key == "lower") && v) {
         if (lua_isnil(L, 3))
@@ -904,10 +912,10 @@ int Quantity_newindex(lua_State* L) {
         if (lua_isnil(L, 3))
             v->upper = std::nullopt;
         else
-        v->upper = luaL_checknumber(L, 3);
+            v->upper = luaL_checknumber(L, 3);
     }
     else
-        luaL_error(L, format("attempt to assign to non-existent property \"{}\".", key).c_str());
+        luaL_error(L, format("no property named \"{}\".", key).c_str());
 
     return 0;
 }
@@ -988,9 +996,9 @@ int Constraint_index(lua_State* L) {
 int Constraint_newindex(lua_State* L) {
     auto eq = check_luaobj<Constraint>(L, MT_CONSTRAINT, 1);
     string key = luaL_checkstring(L, 2);
-    if (key == "v" || key == "value") eq->value = luaL_checknumber(L, 3);
+    if (key == "v" || key == "value" || key == "bv") eq->value = luaL_checknumber(L, 3);
     else
-        luaL_error(L, format("property \"{}\" not found.", key).c_str());
+        luaL_error(L, format("no property named \"{}\".", key).c_str());
 
     return 0;
 }
@@ -1022,7 +1030,7 @@ int JacobianNZ_newindex(lua_State* L) {
     string key = luaL_checkstring(L, 2);
     if (key == "v" || key == "value" || key == "bv") jnz->value = luaL_checknumber(L, 3);
     else
-        luaL_error(L, format("property \"{}\" not found.", key).c_str());
+        luaL_error(L, format("no property named \"{}\".", key).c_str());
 
     return 0;
 }
@@ -1054,7 +1062,7 @@ int HessianNZ_newindex(lua_State* L) {
     string key = luaL_checkstring(L, 2);
     if (key == "v" || key == "value" || key == "bv") hnz->value = luaL_checknumber(L, 3);
     else
-        luaL_error(L, format("property \"{}\" not found.", key).c_str());
+        luaL_error(L, format("no property named \"{}\".", key).c_str());
 
     return 0;
 }
@@ -1123,7 +1131,7 @@ int Model_newindex(lua_State* L) {
     string key = luaL_checkstring(L, 2);
     if (key == "obj" || key == "objective") m->obj = check_luaobj<Objective>(L, MT_QUANTITY, 3);
     else
-        luaL_error(L, format("property \"{}\" not found.", key).c_str());
+        luaL_error(L, format("no property named \"{}\".", key).c_str());
 
     return 0;
 }
@@ -1133,7 +1141,7 @@ int Model_index(lua_State* L) {
     string key = luaL_checkstring(L, 2);
     if      (key == "name")                        lua_pushstring(L, m->name.c_str());
     else if (key == "index_fs")                    push_luaobj<Flowsheet>(L, m->index_fs.get(), MT_FLOWSHEET);
-    else if (key == "unitset")                     push_luaobj<UnitSet>(L, m->unit_set, MT_UNITSET);
+    else if (key == "unitset")                     push_luaobj<UnitSet>(L, m->unitset, MT_UNITSET);
     else if (key == "obj" || key == "objective")   push_luaobj<Quantity, Objective>(L, m->obj, MT_QUANTITY);
     else if (key == "eval")                        lua_pushcfunction(L, eval_expr);
     else if (key == "get")                         lua_pushcfunction(L, Model_get);
@@ -1180,14 +1188,14 @@ int add_streams(lua_State* L) {
     }
 
     vector<Stream*> strms(n_strms);
+    const char* msg {"expected a table that looks like {name, {c1, c2, ...}}."};
     for (int i = 2; i <= n_strms + 1; i++) {
         // ith arg looks like {"Name", {"Comp1", "Comp2", etc}}
         luaL_checktype(L, i, LUA_TTABLE);
-        luaL_argcheck(L, lua_rawlen(L, i) == 2, i, format("expected argument {} to look like {{name, {{c1, c2, ...}}}}.", i).c_str());
+        luaL_argcheck(L, lua_rawlen(L, i) == 2, i, msg);
         string strm_name = get_string_elem(L, i, 1); 
-        luaL_argcheck(L, !strm_name.empty(), i, "stream name cannot be empty.");
-        luaL_argcheck(L, lua_rawgeti(L, i, 2) == LUA_TTABLE, i,
-            format("expected argument {} to look like {{name, {{c1, c2, ...}}}}.", i).c_str());; // Push elem 2 of ith arg, e.g., {"Comp1", "Comp2"}
+        luaL_argcheck(L, !strm_name.empty(), i, "Stream name cannot be empty.");   // Push elem 2 of ith arg, e.g., {"Comp1", "Comp2"}
+        luaL_argcheck(L, lua_rawgeti(L, i, 2) == LUA_TTABLE, i, msg);
         int n_comps = lua_rawlen(L, -1);
         luaL_argcheck(L, n_comps > 0, i, "expected at least one component.");
         vector<string> comps(n_comps);
@@ -1200,6 +1208,7 @@ int add_streams(lua_State* L) {
         strms[i - 2] = fs->add_stream(strm_name, std::move(comps));
     }
 
+    lua_checkstack(L, n_strms);
     for (int i = 1; i <= n_strms; i++)
         push_luaobj<Stream>(L, strms[i - 1], MT_STREAM);
 
@@ -1440,7 +1449,7 @@ int add_StoicReactor(lua_State* L) {
     vector<Stream*> inlets, outlets;
     start_Block(L, blk_name, inlets, outlets);
 
-    auto u_mw_def = fs->m->unit_set->get_default_unit("molewt");
+    auto u_mw_def = fs->m->unitset->get_default_unit("molewt");
     bool ok {true};
 
     // Arg 5 is a table of molecular weights.
@@ -1452,17 +1461,17 @@ int add_StoicReactor(lua_State* L) {
         double mw_val;
         string comp_name = lua_tostring(L, -2); // key is comp_name
         if (lua_istable(L, -1)) {               // value is a number or a table the looks like {number, unit}
-            luaL_argcheck(L, lua_rawlen(L, -1) == 2, 5, "expected molecular weight specification to look like {number, unit}.");
+            luaL_argcheck(L, lua_rawlen(L, -1) == 2, 5, "expected molecular weight specification to look like {number, Unit}.");
             mw_val = get_double_elem(L, -1, 1, ok);
             luaL_argcheck(L, ok, 5, "expected molecular weight to be a number.");
             auto type = lua_rawgeti(L, -1, 2);  // push element 2 of the table
             if (type == LUA_TSTRING) {
                 string u_str = lua_tostring(L, -1);
-                luaL_argcheck(L, fs->m->unit_set->units.contains(u_str), 5, format("unit \"{}\" not in the unit set.", u_str).c_str());
-                u_mw = fs->m->unit_set->units[u_str].get();
+                luaL_argcheck(L, fs->m->unitset->units.contains(u_str), 5, format("Unit \"{}\" not in the UnitSet.", u_str).c_str());
+                u_mw = fs->m->unitset->units[u_str].get();
             } else {
                 u_mw = get_luaobj_elem<Unit>(L, -1, 2);
-                luaL_argcheck(L, u_mw != nullptr, 5, "expected molecular weight specification to look like {number, unit}.");
+                luaL_argcheck(L, u_mw != nullptr, 5, "expected molecular weight specification to look like {number, Unit}.");
             }
             lua_pop(L, 1);                      // pop element 2
         }
@@ -1471,7 +1480,7 @@ int add_StoicReactor(lua_State* L) {
             u_mw = u_mw_def;
         }
         else
-            luaL_argerror(L, 5, "expected molecular weight to be a number or a {number, unit} table.");
+            luaL_argerror(L, 5, "expected molecular weight to be a number or a {number, Unit} table.");
             
         lua_pop(L, 1);                          // pop the value of the current key-value pair
         mw[comp_name] = {mw_val, u_mw};
@@ -1578,16 +1587,25 @@ int add_prices(lua_State* L) {
         auto n_elem = lua_rawlen(L, i);    // number of elements in the ith arg, where arg = {price_name, value, unit}
         luaL_argcheck(L, n_elem == 3, i, "expected a table that looks like {string, number, Unit}.");
         string price_name = get_string_elem(L, i, 1);
-        luaL_argcheck(L, !price_name.empty(), i, "price name cannot be empty.");
+        luaL_argcheck(L, !price_name.empty(), i, "Price name cannot be empty.");
         auto value = get_double_elem(L, i, 2, ok);
-        luaL_argcheck(L, ok, i, "expecting price value to be a number.");
-        auto unit = get_luaobj_elem<Unit>(L, i, 3);
+        luaL_argcheck(L, ok, i, "expecting Price value to be a number.");
+        Unit* unit {nullptr};
+        if (lua_rawgeti(L, i, 3) == LUA_TSTRING) {  // push elem 3
+            string unit_str = lua_tostring(L, -1);
+            luaL_argcheck(L, m->unitset->units.contains(unit_str), i, format("Unit \"{}\" is not in the UnitSet.", unit_str).c_str());
+            unit = m->unitset->units[unit_str].get();
+        }
+        else
+            unit = get_luaobj_elem<Unit>(L, i, 3);
+        lua_pop(L, 1);                              // pop elem 3
         luaL_argcheck(L, unit != nullptr, i, "expecting element 3 to be a Unit.");
 
         auto p = m->add_price(price_name, value, unit);
         push_luaobj<Quantity, Price>(L, p, MT_QUANTITY);
     }
 
+    lua_checkstack(L, n_args - 1);
     return n_args - 1;
 }
 
@@ -1601,13 +1619,13 @@ int do_add_obj(lua_State* L, Objective* obj, int n_args, int n_start, int n_term
             auto n_elem = lua_rawlen(L, i);    // number of elements in the ith arg, where arg = {term_name, Variable, Price, Unit, <scale>}
             luaL_argcheck(L, n_elem == 4 || n_elem == 5, i, msg);
             string term_name = get_string_elem(L, i, 1);    // element 1 is an objective term name
-            luaL_argcheck(L, !term_name.empty(), i, "objective term name cannot be empty.");
+            luaL_argcheck(L, !term_name.empty(), i, "ObjTerm name cannot be empty.");
             Variable* var;
             auto type = lua_rawgeti(L, i, 2);  // push elem 2
             if (type == LUA_TSTRING) {     // element 2 is a variable name or a Variable
                 string var_name = get_string_elem(L, i, 2);
-                luaL_argcheck(L, !var_name.empty(), i, "variable name cannot be empty.");
-                luaL_argcheck(L, obj->m->x_map.contains(var_name), i, format("variable \"{}\" not found.", var_name).c_str());
+                luaL_argcheck(L, !var_name.empty(), i, "Variable name cannot be empty.");
+                luaL_argcheck(L, obj->m->x_map.contains(var_name), i, format("Variable \"{}\" is not in the Model.", var_name).c_str());
                 var = obj->m->x_map[var_name];
             }
             else {
@@ -1620,8 +1638,8 @@ int do_add_obj(lua_State* L, Objective* obj, int n_args, int n_start, int n_term
             type = lua_rawgeti(L, i, 3);       // push elem 3
             if (type == LUA_TSTRING) {     // element 3 is a price name or a Price
                 string price_name = get_string_elem(L, i, 3);
-                luaL_argcheck(L, !price_name.empty(), i, "price name cannot be empty.");
-                luaL_argcheck(L, obj->m->prices.contains(price_name), i, format("price \"{}\" not found.", price_name).c_str());
+                luaL_argcheck(L, !price_name.empty(), i, "Price name cannot be empty.");
+                luaL_argcheck(L, obj->m->prices.contains(price_name), i, format("Price \"{}\" is not in the Model.", price_name).c_str());
                 price = obj->m->prices[price_name].get();
             }
             else {
@@ -1634,9 +1652,9 @@ int do_add_obj(lua_State* L, Objective* obj, int n_args, int n_start, int n_term
             type = lua_rawgeti(L, i, 4);       // push elem 4
             if (type == LUA_TSTRING) {     // element 4 is a unit string or a Unit
                 string unit_str = get_string_elem(L, i, 4);
-                luaL_argcheck(L, !unit_str.empty(), i, "unit string cannot be empty.");
-                luaL_argcheck(L, obj->m->unit_set->units.contains(unit_str), i, format("unit \"{}\" not found.", unit_str).c_str());
-                unit = obj->m->unit_set->units[unit_str].get();
+                luaL_argcheck(L, !unit_str.empty(), i, "Unit string cannot be empty.");
+                luaL_argcheck(L, obj->m->unitset->units.contains(unit_str), i, format("Unit \"{}\" is not in the UnitSet.", unit_str).c_str());
+                unit = obj->m->unitset->units[unit_str].get();
             }
             else {
                 unit = get_luaobj_elem<Unit>(L, i, 4);
@@ -1661,7 +1679,7 @@ int do_add_obj(lua_State* L, Objective* obj, int n_args, int n_start, int n_term
                 string child_obj_name = lua_tostring(L, i);
                 luaL_argcheck(L, !child_obj_name.empty(), i, "objective name cannot be empty.");
                 luaL_argcheck(L, obj->m->objectives.contains(child_obj_name), i,
-                    format("Objective \"{}\" not found.", child_obj_name).c_str());
+                    format("Objective \"{}\" is not in the Model.", child_obj_name).c_str());
                 child_obj = obj->m->objectives[child_obj_name].get();
             }
             else
@@ -1685,6 +1703,7 @@ int do_add_obj(lua_State* L, Objective* obj, int n_args, int n_start, int n_term
         else
             push_luaobj<Quantity, Objective>(L, std::get<Objective*>(terms[i]), MT_QUANTITY);
 
+    lua_checkstack(L, n_terms + 1);
     return n_terms + (new_obj ? 1 : 0);
 }
 
@@ -1703,8 +1722,8 @@ int add_new_objective(lua_State* L) {
     if (lua_isstring(L, 3)) {
         string unit_str = lua_tostring(L, 3);
         luaL_argcheck(L, !unit_str.empty(), 3, "unit string cannot be empty.");
-        luaL_argcheck(L, m->unit_set->units.contains(unit_str), 3, format("unit \"{}\" not found.", unit_str).c_str());
-        obj_unit = m->unit_set->units[unit_str].get();
+        luaL_argcheck(L, m->unitset->units.contains(unit_str), 3, format("Unit \"{}\" is not in the UnitSet.", unit_str).c_str());
+        obj_unit = m->unitset->units[unit_str].get();
     }
     else 
         obj_unit = check_luaobj<Unit>(L, MT_UNIT, 3);
@@ -1794,16 +1813,25 @@ int add_variables(lua_State* L) {
     for (int i = 2; i <= n_args; i++) {
         luaL_checktype(L, i, LUA_TTABLE);
         auto n_elem = lua_rawlen(L, i);    // number of elements in the ith argument table
-        luaL_argcheck(L, n_elem == 2, i, format("expected argument {} to look like {{string, Unit}}.", i).c_str());
+        luaL_argcheck(L, n_elem == 2, i, "expected a table that looks like {string, Unit}.");
         string var_name = get_string_elem(L, i, 1);  // element 1 is variable name
-        luaL_argcheck(L, !var_name.empty(), i, "variable name cannot be empty.");
-        auto unit = get_luaobj_elem<Unit>(L, i, 2);  // element 2 is Unit
-        luaL_argcheck(L, unit != nullptr, i, format("expected element 2 of argument {} to be a Unit.", i).c_str());
+        luaL_argcheck(L, !var_name.empty(), i, "Variable name cannot be empty.");
+        Unit* unit {nullptr};
+        if (lua_rawgeti(L, i, 2) == LUA_TSTRING) {  // push elem 2
+            string unit_str = lua_tostring(L, -1);
+            luaL_argcheck(L, M->unitset->units.contains(unit_str), i, format("Unit \"{}\" is not in the UnitSet.", unit_str).c_str());
+            unit = M->unitset->units[unit_str].get();
+        }
+        else
+            unit = get_luaobj_elem<Unit>(L, i, 2);  // element 2 is a Unit
+        lua_pop(L, 1);                              // pop elem 2
+        luaL_argcheck(L, unit != nullptr, i, "expected element 2 to be a Unit.");
         auto v = M->add_var(calc_p->prefix + var_name, unit);
         calc_p->x.push_back(v);
         push_luaobj<Quantity, Variable>(L, v, MT_QUANTITY);
     }
 
+    lua_checkstack(L, n_args - 1);
     return n_args - 1;
 }
 
@@ -1813,12 +1841,13 @@ int add_constraints(lua_State* L) {
     auto n_args = lua_gettop(L);
     for (int i = 2; i <= n_args; i++) {
         string eq_name = luaL_checkstring(L, i);
-        luaL_argcheck(L, !eq_name.empty(), i, "constraint name cannot be empty.");
+        luaL_argcheck(L, !eq_name.empty(), i, "Constraint name cannot be empty.");
         auto eq = M->add_constraint(calc_p->prefix + eq_name);
         calc_p->g.push_back(eq);
         push_luaobj<Constraint>(L, eq, MT_CONSTRAINT);
     }
 
+    lua_checkstack(L, n_args - 1);
     return n_args - 1;
 }
 
@@ -1829,16 +1858,17 @@ int add_jacobian_nzs(lua_State* L) {
     for (int i = 2; i <= n_args; i++) {
         luaL_checktype(L, i, LUA_TTABLE);
         auto n_elem = lua_rawlen(L, i);    // number of elements in the ith JNZ list
-        luaL_argcheck(L, n_elem == 2, i, format("expected argument {} to look like {{Constraint, Variable}}.", i).c_str());
+        luaL_argcheck(L, n_elem == 2, i, "expected a table that looks like {Constraint, Variable}.");
         auto con = get_luaobj_elem<Constraint>(L, i, 1); // element 1 is a Constraint
-        luaL_argcheck(L, con != nullptr, i, format("expected element 1 of argument {} to be a Constraint.", i).c_str());
+        luaL_argcheck(L, con != nullptr, i, "expected element 1 to be a Constraint.");
         auto var = get_luaobj_elem<Variable>(L, i, 2);   // element 2 is a Variable
-        luaL_argcheck(L, var != nullptr, i, format("expected element 2 of argument {} to be a Variable.", i).c_str());
+        luaL_argcheck(L, var != nullptr, i, "expected element 2 to be a Variable.");
         auto jnz = M->add_J_NZ(con, var);
         calc_p->J.push_back(jnz);
         push_luaobj<JacobianNZ>(L, jnz, MT_JACOBIAN_NZ);
     }
 
+    lua_checkstack(L, n_args - 1);
     return n_args - 1;
 }
 
@@ -1849,18 +1879,19 @@ int add_hessian_nzs(lua_State* L) {
     for (int i = 2; i <= n_args; i++) {
         luaL_checktype(L, i, LUA_TTABLE);
         auto n_elem = lua_rawlen(L, i);    // number of elements in the ith HNZ list
-        luaL_argcheck(L, n_elem == 3, i, format("expected argument {} to look like {{Constraint, Variable, Variable}}.", i).c_str());
+        luaL_argcheck(L, n_elem == 3, i, "expected a table that looks like {Constraint, Variable, Variable}.");
         auto con = get_luaobj_elem<Constraint>(L, i, 1); // element 1 is a Constraint
-        luaL_argcheck(L, con != nullptr, i, format("expected element 1 of argument {} to be a Constraint.", i).c_str());
+        luaL_argcheck(L, con != nullptr, i, "expected element 1 to be a Constraint.");
         auto var1 = get_luaobj_elem<Variable>(L, i, 2);   // element 2 is a Variable
-        luaL_argcheck(L, var1 != nullptr, i, format("expected element 2 of argument {} to be a Variable.", i).c_str());
+        luaL_argcheck(L, var1 != nullptr, i, "expected element 2 to be a Variable.");
         auto var2 = get_luaobj_elem<Variable>(L, i, 3);   // element 3 is a Variable
-        luaL_argcheck(L, var2 != nullptr, i, format("expected element 3 of argument {} to be a Variable.", i).c_str());
+        luaL_argcheck(L, var2 != nullptr, i, "expected element 3 to be a Variable.");
         auto hnz = M->add_H_NZ(con, var1, var2);
         calc_p->H.push_back(hnz);
         push_luaobj<HessianNZ>(L, hnz, MT_HESSIAN_NZ);
     }
 
+    lua_checkstack(L, n_args - 1);
     return n_args - 1;
 }
 
@@ -1999,6 +2030,35 @@ lua_State* start_lua() {
 #define EXPORT_LUAOPEN
 #endif
 
+class LuaStreambuf : public std::streambuf {
+    lua_State* L;
+    std::string buffer;
+
+    void flush_to_lua() {
+        if (buffer.empty()) return;
+        lua_getglobal(L, "io");
+        lua_getfield(L, -1, "write");
+        lua_remove(L, -2);
+        lua_pushstring(L, buffer.c_str());
+        lua_pcall(L, 1, 0, 0);
+        buffer.clear();
+    }
+
+protected:
+    int overflow(int c) override {
+        if (c != EOF)
+            buffer += static_cast<char>(c);
+        return c;
+    }
+
+    int sync() override {
+        flush_to_lua();
+        return 0;
+    }
+    
+public:
+    LuaStreambuf(lua_State* L_) : L(L_) {}
+};
 
 extern "C" EXPORT_LUAOPEN int luaopen_mboptlib(lua_State* L)
 {
@@ -2015,8 +2075,8 @@ extern "C" EXPORT_LUAOPEN int luaopen_mboptlib(lua_State* L)
     if (std::getenv("JPY_PARENT_PID") != nullptr) {
         cout.rdbuf(&lua_buf);
 
-        // Override print to call tostring() on each argument, 
-        // since xeus-lua's print does not do this
+        // xeus-lua's print() does not call tostring() on each argument. 
+        // Override it to make it do that.
         luaL_dostring(L, R"(
             local _real_print = print
             print = function(...)

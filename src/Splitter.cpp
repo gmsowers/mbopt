@@ -49,7 +49,7 @@ Splitter::Splitter(string_view       name_,
     // Split fraction definitions, (spl1.Sin.mass * spl1.Si.splitfrac) - spl1.Si.mass == 0
     //    for Si in outlet streams.
     for (int i = 0; const auto& sout : outlets) {
-        auto v = m->add_var(prefix + sout->name + ".splitfrac", m->unit_set->get_default_unit("frac"));
+        auto v = m->add_var(prefix + sout->name + ".splitfrac", m->unitset->get_default_unit("frac"));
         x.push_back(v);
         x_split[i++] = v;
         eq = m->add_constraint(prefix + sout->name + "_splitfrac_def");

@@ -72,7 +72,7 @@ StoicReactor::StoicReactor(string_view                                  name_,
     // Equations and variables to calculate the molar flow rates of the reacting components, in both
     //    inlet and outlet streams.
     //    e.g., arx.in.mass_c2h2 - arx.in.moles_c2h2 * mw["c2h2"] == 0
-    auto u_moleflow = m->unit_set->get_default_unit("moleflow");
+    auto u_moleflow = m->unitset->get_default_unit("moleflow");
     for (const auto& c : sin->comps) {
         if (std::ranges::find(rx_comps, c) != rx_comps.end()) {
             x.push_back(inlet_moles[c] = m->add_var(prefix + sin->name + ".moles_" + c, u_moleflow));
@@ -110,7 +110,7 @@ StoicReactor::StoicReactor(string_view                                  name_,
 
     // Equations defining a per-reaction conversion of some component in terms of the extent of that reaction,
     //    e.g., arx.in.moles_c2h2 * arx.conv_c2h2_rx_1 + stoic_coef[1]["c2h2"] * arx.extent_rx_1 == 0
-    auto u_frac = m->unit_set->get_default_unit("frac");
+    auto u_frac = m->unitset->get_default_unit("frac");
     for (int i = 0; i < n_rx; i++) {
         auto c = conversion_keys[i];
         string prefix_ = prefix + "conv_" + c + "_rx_" + std::to_string(i + 1);

@@ -45,7 +45,7 @@ Unit* UnitSet::add_unit(const string& unit_str,
                         UnitKind*     unit_kind,
                         double        unit_ratio,
                         double        unit_offset) {
-    auto unit = make_unique<Unit>(unit_str, unit_kind, unit_ratio, unit_offset);
+    auto unit = make_unique<Unit>(unit_str, unit_kind, this, unit_ratio, unit_offset);
     auto unit_p = unit.get();
     if (unit_str == unit_kind->base_unit_str)
         unit_kind->base_unit = unit_p;
@@ -248,8 +248,8 @@ void Block::make_stream_variables(Stream* strm)
 
     StreamVars strm_vars {};
 
-    auto u_massflow = m->unit_set->get_default_unit("massflow");
-    auto u_massfrac = m->unit_set->get_default_unit("massfrac");
+    auto u_massflow = m->unitset->get_default_unit("massflow");
+    auto u_massfrac = m->unitset->get_default_unit("massfrac");
 
     x.push_back(strm_vars.total_mass = m->add_var(s_prefix + "mass", u_massflow));
 

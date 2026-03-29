@@ -50,7 +50,7 @@ print("Test 5 passed")
 n_test = n_test + 1
 
 -- test 6: Change the unit on a price.
-N1_price:change_unit(M.unitset.units["$/lb"])
+N1_price.unit = "$/lb"
 if not isapprox(N1_price.v, 0.5/2.20462) then goto FAILED end
 print("Test 6 passed")
 n_test = n_test + 1

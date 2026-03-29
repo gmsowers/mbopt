@@ -12,7 +12,7 @@
 #include <variant>
 #include <algorithm>
 #include "IpIpoptApplication.hpp"
-#include "IpJournalist.hpp"
+#include "IpJournalist.hpp"     // IWYU pragma: keep
 
 constexpr double NO_BOUND = 1.0e20;
 
@@ -47,25 +47,29 @@ ostream& operator<<(ostream& os, const T& obj) {
 }
 
 struct UnitKind;
+struct UnitSet;
 
 string str(double d);
 
 struct Unit
 {
-    string    str    {};
-    UnitKind* kind   {};
-    double    ratio  {1.0};
-    double    offset {0.0};
+    string    str     {};
+    UnitKind* kind    {};
+    UnitSet*  unitset {};
+    double    ratio   {1.0};
+    double    offset  {0.0};
 
     Unit() = default;
     Unit(string_view str_,
          UnitKind*   kind_,
+         UnitSet*    unitset_,
          double      ratio_  = 1.0,
          double      offset_ = 0.0) :
-        str    {str_},
-        kind   {kind_},
-        ratio  {ratio_},
-        offset {offset_}
+        str     {str_},
+        kind    {kind_},
+        unitset {unitset_},
+        ratio   {ratio_},
+        offset  {offset_}
     {}
 
     string to_str() const;
@@ -669,7 +673,7 @@ class Model : public TNLP
 public:
     string                             name;
     unique_ptr<Flowsheet>              index_fs;
-    UnitSet*                           unit_set;
+    UnitSet*                           unitset;
     Connections                        cnx {};
     vector<unique_ptr<Variable>>       x_vec;
     unordered_map<string, Variable*>   x_map;
@@ -690,9 +694,9 @@ public:
     
     Model(string_view name_,
           string_view index_fs_name,
-          UnitSet*    unit_set_) noexcept :
-        name     {name_},
-        unit_set {unit_set_}
+          UnitSet*    unitset_) noexcept :
+        name    {name_},
+        unitset {unitset_}
     {
         index_fs = make_unique<Flowsheet>(index_fs_name, this, nullptr);
     }
@@ -735,7 +739,7 @@ public:
                                ostream&   os = cout) const;
     void        show_obj_grad(ostream& os = cout)    const;
     void        show_units(ostream& os = cout)       const {
-        unit_set->show_units(os);
+        unitset->show_units(os);
     }
     void        write_variables(ostream& os = cout)  const;
 

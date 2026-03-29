@@ -78,7 +78,7 @@ n_test = n_test + 1
 unew = M.unitset.units["lb/hr"]
 if unew == nil then goto FAILED end
 var2 = M:get("mix1.N2.mass_O2")
-var2:change_unit(unew)
+var2.unit = unew
 if not isapprox(var2.v, 2.20462) then goto FAILED end
 if var2.u.str ~= "lb/hr" then goto FAILED end
 print("Test 6 passed")
