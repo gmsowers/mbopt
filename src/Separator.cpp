@@ -1,4 +1,4 @@
-#include <cassert>
+#include <stdexcept>
 #include "Separator.hpp"
 
 Separator::Separator(string_view       name_,
@@ -17,7 +17,8 @@ Separator::Separator(string_view       name_,
     vector<string> outlet_comps_union {};
     for (const auto& sout : outlets)
         outlet_comps_union += sout->comps;
-    assert(outlet_comps_union == sin->comps);
+    if (outlet_comps_union != sin->comps)
+        throw std::invalid_argument("inlet stream component list must be the union of the outlet stream component lists");
 
     // Total mass flow definition for all streams, \sum_{Cj in comps}(sep1.Si.mass_Cj) - sep1.Si.mass == 0,
     //     for Si in streams, Cj in comps.

@@ -1,4 +1,4 @@
-#include <cassert>
+#include <stdexcept>
 #include "MultiYieldReactor.hpp"
 
 MultiYieldReactor::MultiYieldReactor(string_view           name_,
@@ -15,8 +15,11 @@ MultiYieldReactor::MultiYieldReactor(string_view           name_,
                                       std::move(outlets_)),
                                 feed_names {feed_names_}
 {
-    assert(inlets.size() == outlets.size());
-    assert(feed_names.size() == inlets.size());
+    if (inlets.size() != outlets.size())
+        throw std::invalid_argument("number of inlet streams must equal the number of outlet streams");
+
+    if (feed_names.size() != inlets.size())
+        throw std::invalid_argument("number of inlet streams must equal the number of feeds");
 
     const auto m = fs->m;
     const auto n_feeds = feed_names.size();

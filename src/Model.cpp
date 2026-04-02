@@ -1,6 +1,5 @@
-#include <algorithm>
-#include <cassert>
 #include <ranges>
+#include <set>
 #include "Model.hpp"
 
 vector<string> operator+(const vector<string>& c1, const vector<string>& c2)
@@ -20,6 +19,12 @@ vector<string>& operator+=(vector<string>& c1, const vector<string>& c2)
             c1.push_back(c);
     }
     return c1;
+}
+
+bool operator!=(const vector<string>& c1, const vector<string>& c2)
+{
+    return std::set<string>(c1.begin(), c1.end()) !=
+           std::set<string>(c2.begin(), c2.end());
 }
 
 //---------------------------------------------------------
@@ -97,16 +102,16 @@ void Quantity::change_unit(Unit* new_unit) {
 //---------------------------------------------------------
 
 vector<Connection*> Stream::connect() {
-    vector<Connection*> conn_p {};
-    if (!to || !from) return conn_p;
+    vector<Connection*> connections {};
+    if (!to || !from) return connections;
     auto M = fs->m;
     auto to_sv = to->x_strm[this];
     auto from_sv = from->x_strm[this];
     for (const auto& c : comps) {
-        conn_p.push_back(M->add_connection(to_sv.mass[c], from_sv.mass[c]));
+        connections.push_back(M->add_connection(to_sv.mass[c], from_sv.mass[c]));
         to_sv.mass[c]->convert_and_set(*from_sv.mass[c]);
     }
-    return conn_p;
+    return connections;
 }
 
 //---------------------------------------------------------
@@ -128,18 +133,19 @@ Stream* Flowsheet::add_stream(const string&  name_,
 }
 
 void Flowsheet::show_flowsheet(ostream& os) const {
-    os << "Flowsheet: " << name << '\n';
-    for (const auto& blk : blocks) {
-        os << format("  {:12} in= ", blk->name);
-        for (const auto& sin : blk->inlets)
-            os << sin->name << ' ';
-        os << '\n' << format("              out= ");
-        for (const auto& sout : blk->outlets)
-            os << sout->name;
-        os << '\n';
+    os << "Flowsheet: " << name << "\n  Blocks:\n";
+    for (const auto& blk : blocks)
+        os << "    " << blk->to_str();
+    if (!children.empty()) {
+        os << "\n  Flowsheets:\n\n";
+        for (const auto& fs : children)
+            os << "    " << fs->name << '\n';
     }
-    for (const auto& clc : calcs)
-        os << format("  {:12}", clc->name);
+    if (!calcs.empty()) {
+        os << "\n  Calcs:\n\n";
+        for (const auto& clc : calcs)
+            os << format("    {:12}\n", clc->name);
+    }
     os << '\n' << std::flush;
 }
 
@@ -269,12 +275,36 @@ void Block::make_all_stream_variables() {
     for (const auto& strm : outlets) make_stream_variables(strm);
 }
 
+vector<Connection*> Block::connect_inlet_streams() {
+    vector<Connection*> connections {};
+    for (const auto& strm : inlets) {
+        auto s_conns = strm->connect();
+        connections.insert(connections.end(), std::make_move_iterator(s_conns.begin()),
+                                              std::make_move_iterator(s_conns.end()));
+    }
+    return connections;
+}
+
 void Block::show_variables(ostream& os) const {
     int count {0};
     os << var_header;
     for (const auto var : x) {
         os << *var << '\n';
         count++;
+    }
+    os << var_footer;
+    os << count << " Variable" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
+}
+
+void Block::show_fixed(ostream& os) const {
+    int count {0};
+    os << var_header;
+    for (const auto var : x) {
+        if (var->is_fixed()) {
+            os << *var << '\n';
+            count++;
+        }
     }
     os << var_footer;
     os << count << " Variable" << (count == 1 ? "" : "s") << " shown\n\n";
@@ -325,7 +355,7 @@ void Block::write_variables(ostream& os) const {
     os << std::flush;
 }
 
-string Block::to_str() const {
+static string blk_type_to_str(BlockType blk_type) {
     string s_type;
     switch (blk_type) {
         case BlockType::Mixer:             s_type = "Mixer";             break;
@@ -335,10 +365,28 @@ string Block::to_str() const {
         case BlockType::MultiYieldReactor: s_type = "MultiYieldReactor"; break;
         case BlockType::StoicReactor:      s_type = "StoicReactor";      break;
     }
-    string s = format("Block: {}\n  flowsheet: {}\n  type: {}\n  inlets: ", name, fs->name, s_type);
-    for (const auto& sin : inlets) s += sin->name + " ";
-    s += "\n  outlets: ";
-    for (const auto& sout : outlets) s += sout->name + " ";
+    return s_type;
+}
+
+string Block::to_str() const {
+    string s_type = blk_type_to_str(blk_type);
+    string s = format("{:12} {:18}  in: ", name, '(' + s_type + ')');
+    for (const auto& sin : inlets) s += sin->name + ' ';
+    s += "  out: ";
+    for (const auto& sout : outlets) s += sout->name + ' ';
+    s += '\n';
+    return s;
+}
+
+string Block::to_str_2() const {
+    string s_type = blk_type_to_str(blk_type);
+    string s = format("Block: {}\n", name);
+    s +=       format("  type: {}\n", s_type);
+    s +=       format("  flowsheet: {}\n", fs->name);
+    s +=              "  in:  ";
+    for (const auto& sin : inlets) s += sin->name + ' ';
+    s +=            "\n  out: ";
+    for (const auto& sout : outlets) s += sout->name + ' ';
     s += '\n';
     return s;
 }
@@ -359,6 +407,20 @@ void Calc::show_variables(ostream& os) const {
     for (const auto var : x) {
         os << *var << '\n';
         count++;
+    }
+    os << var_footer;
+    os << count << " Variable" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
+}
+
+void Calc::show_fixed(ostream& os) const {
+    int count {0};
+    os << var_header;
+    for (const auto var : x) {
+        if (var->is_fixed()) {
+            os << *var << '\n';
+            count++;
+        }
     }
     os << var_footer;
     os << count << " Variable" << (count == 1 ? "" : "s") << " shown\n\n";
@@ -569,6 +631,20 @@ void Model::show_variables(ostream& os) const {
     os << std::flush;
 }
 
+void Model::show_fixed(ostream& os) const {
+    int count {0};
+    os << var_header;
+    for (const auto& var : x_vec) {
+        if (var->is_fixed()) {
+            os << *var << '\n';
+            count++;
+        }
+    }
+    os << var_footer;
+    os << count << " Variable" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << std::flush;
+}
+
 void Model::show_constraints(ostream& os) const {
     int count {0};
     os << con_header;
@@ -689,7 +765,7 @@ void Model::show_model(ostream& os) const {
 }
 
 void Model::write_variables(ostream& os) const {
-    os << "Eval([[\n";
+    os << "return [[\n";
     for (const auto& var : x_vec)
         os << format("    {:32} = {}_{}\n", var->name, str(var->value), var->unit->str);
     os << "]])\n";
@@ -748,9 +824,6 @@ bool Model::get_starting_point(
     bool    init_lambda,
     Number* lambda)
 {
-    assert(init_z == false);
-    assert(init_lambda == false);
-
     for (Index i = 0; const auto& var : x_vec)
         x_init[i++] = *var;
 

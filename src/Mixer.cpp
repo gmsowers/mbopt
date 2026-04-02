@@ -1,4 +1,4 @@
-#include <cassert>
+#include <stdexcept>
 #include "Mixer.hpp"
 
 Mixer::Mixer(string_view       name_,
@@ -17,7 +17,8 @@ Mixer::Mixer(string_view       name_,
     vector<string> inlet_comps_union {};
     for (const auto& sin : inlets)
         inlet_comps_union += sin->comps;
-    assert(inlet_comps_union == sout->comps);
+    if (inlet_comps_union != sout->comps)
+        throw std::invalid_argument("outlet stream component list must be the union of the inlet stream component lists");
 
     // Component mass balances, \sum_{Ni in inlets}(mix1.Ni.mass_Cj) - mix1.OUT.mass_Cj == 0 for Cj in outlet_comps.
     for (const auto& c : sout->comps) {

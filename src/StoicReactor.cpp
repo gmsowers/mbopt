@@ -1,5 +1,5 @@
 #include <ranges>
-#include <cassert>
+#include <stdexcept>
 #include "StoicReactor.hpp"
 
 StoicReactor::StoicReactor(string_view                                  name_,
@@ -24,7 +24,9 @@ StoicReactor::StoicReactor(string_view                                  name_,
     const auto m = fs->m;
 
     n_rx = stoic_coef.size();
-    assert(conversion_keys.size() == n_rx);
+    if (conversion_keys.size() != n_rx)
+        throw std::invalid_argument("number of conversion keys must equal the number of reactions");
+
     extents.resize(n_rx);
     conversions.resize(n_rx);
 

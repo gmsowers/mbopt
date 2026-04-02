@@ -1,4 +1,4 @@
-#include <cassert>
+#include <stdexcept>
 #include "Splitter.hpp"
 
 Splitter::Splitter(string_view       name_,
@@ -15,7 +15,8 @@ Splitter::Splitter(string_view       name_,
     const auto m = fs->m;
 
     for (const auto& sout : outlets)
-        assert(sin->comps == sout->comps);
+        if (sin->comps != sout->comps)
+            throw std::invalid_argument("outlet stream component list must be the same as the inlet stream component list");
 
     x_split.resize(outlets.size());
     

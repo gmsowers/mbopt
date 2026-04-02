@@ -8,3 +8,8 @@ build-linux/
 .DS_Store
 src/scripter_func.cpp
 src/FlowsheetRenderer.hpp
+f1f5_init.lua
+mboptlib.so
+test.lua
+.gitignore
+

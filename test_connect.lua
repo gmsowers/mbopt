@@ -54,13 +54,13 @@ print("Test 4 passed")
 n_test = n_test + 1
 
 -- test 5: Connect the mix1 outlet and spl1 inlet streams.
-ok = M:connect_all()
-if not ok then goto FAILED end
+conns = {spl1:connect_inlets()}
+if #conns == 0 then goto FAILED end
 print("Test 5 passed")
 n_test = n_test + 1
 
 M:show_variables()
-do return end
+
 ok = M:eval([[
     mix1.N1.mass_H2 = 1.0
     mix1.N1.mass_O2 = 1.0

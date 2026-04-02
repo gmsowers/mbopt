@@ -26,7 +26,6 @@ using std::format;
 using std::ostream;
 using std::ofstream;
 using std::cout;
-using std::cerr;
 
 using Ipopt::TNLP;
 using Ipopt::Index;
@@ -189,7 +188,7 @@ public:
         {return convert_to_base();}
 
     string to_str_2() const {
-        return ((name.empty() ? "" : name + " = ") + str(value) + "_" + unit->str);
+        return (str(value) + "_" + unit->str);
     }
     
      string to_str() const {
@@ -308,6 +307,7 @@ class Flowsheet;
 
 vector<string>  operator+(const vector<string>& c1, const vector<string>& c2);
 vector<string>& operator+=(vector<string>& c1, const vector<string>& c2);
+bool operator!=(const vector<string>& c1, const vector<string>& c2);
 
 //---------------------------------------------------------
 
@@ -378,7 +378,10 @@ public:
     virtual void eval_jacobian()    = 0;
     virtual void eval_hessian()     = 0;
 
+    vector<Connection*> connect_inlet_streams();
+
     void show_variables(ostream& os = cout)   const;
+    void show_fixed(ostream& os = cout)       const;
     void show_constraints(ostream& os = cout) const;
     void show_jacobian(ostream& os = cout)    const;
     void show_hessian(ostream& os = cout)     const;
@@ -386,6 +389,7 @@ public:
     void write_variables(ostream& os = cout)  const;
 
     string to_str() const;
+    string to_str_2() const;
 
 private:
     void make_stream_variables(Stream* strm);
@@ -413,6 +417,7 @@ public:
          Flowsheet*  fs_);
 
     void show_variables(ostream& os = cout)   const;
+    void show_fixed(ostream& os = cout)       const;
     void show_constraints(ostream& os = cout) const;
     void show_jacobian(ostream& os = cout)    const;
     void show_hessian(ostream& os = cout)     const;
@@ -441,7 +446,6 @@ public:
         if (H.empty()) return;
         call_lua_function(make_name("eval_hessian"));
     }
-
 
 };
 
@@ -729,6 +733,7 @@ public:
     void        eval_obj_grad()    { if (obj) obj->eval_grad();   }; 
     
     void        show_variables(ostream& os = cout)   const;
+    void        show_fixed(ostream& os = cout)       const;
     void        show_constraints(ostream& os = cout) const;
     void        show_jacobian(ostream& os = cout)    const;
     void        show_hessian(ostream& os = cout)     const;

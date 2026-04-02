@@ -59,6 +59,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     else()
         set(LIBC_PATH "")
     endif()
+    # Address Sanitizer build options
+    target_compile_options(mbopt PRIVATE
+        -fsanitize=address
+        -fno-omit-frame-pointer
+        -g
+    )
+
+    target_link_options(mbopt PRIVATE
+    -fsanitize=address
+    )
     target_link_libraries(mbopt ${IPOPTLIB} ${LUALIB} ${LIBC_PATH})
     target_link_libraries(mboptlib ${IPOPTLIB} ${LUALIB} ${LIBC_PATH})
 endif()
