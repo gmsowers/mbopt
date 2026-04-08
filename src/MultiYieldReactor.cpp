@@ -137,7 +137,7 @@ MultiYieldReactor::MultiYieldReactor(string_view           name_,
 
     // Make a variable and equation for totaling n_feedi_reactors,
     //   e.g., sum(rx1.n_feedi_reactor) - rx1.n_reactor == 0
-    n_total_rx = m->add_var(prefix + "n_" + reactor_name, u_count);
+    x.push_back(n_total_rx = m->add_var(prefix + "n_" + reactor_name, u_count));
     eq = m->add_constraint(prefix + "total_" + reactor_name + "_calc");
     g.push_back(eq);
     for (size_t i = 0; i < n_feeds; i++)

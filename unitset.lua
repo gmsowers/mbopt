@@ -31,8 +31,9 @@ units = {
         { "%",    1.0 / 100.0 }
     },
     massval = {
-        { "$/kg", 1.0     },
-        { "$/lb", 2.20462 }
+        { "$/kg",   1.0     },
+        { "$/lb",   2.20462 },
+        { "cts/lb", 2.20462 / 100.0}
     },
     flowval = {
         { "$/hr",  1.0        },
@@ -42,4 +43,4 @@ units = {
         { "#", 1.0}
     }
 }
-us = UnitSet(kinds, units)
+return UnitSet(kinds, units)

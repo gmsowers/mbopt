@@ -1,6 +1,11 @@
 #include <ranges>
 #include <set>
+#include <regex>
+#include <string>
+#include <unordered_map>
 #include "Model.hpp"
+
+static const double BNDTOL = 3.0e-7;
 
 vector<string> operator+(const vector<string>& c1, const vector<string>& c2)
 {
@@ -125,7 +130,7 @@ Flowsheet* Flowsheet::add_flowsheet(string_view name_) {
 }
 
 Stream* Flowsheet::add_stream(const string&  name_,
-                              vector<string> comps) noexcept {
+                              vector<string> comps) {
     auto strm = make_unique<Stream>(name_, this, std::move(comps));
     auto strm_p = strm.get();
     this->streams[name_] = std::move(strm);
@@ -229,7 +234,7 @@ Block::Block(string_view       name_,
              Flowsheet*        fs_,
              BlockType         blk_type_,
              vector<Stream*>&& inlets_,
-             vector<Stream*>&& outlets_) noexcept :
+             vector<Stream*>&& outlets_) :
     name     {name_},
     fs       {fs_},
     blk_type {blk_type_},
@@ -285,30 +290,67 @@ vector<Connection*> Block::connect_inlet_streams() {
     return connections;
 }
 
-void Block::show_variables(ostream& os) const {
-    int count {0};
-    os << var_header;
-    for (const auto var : x) {
-        os << *var << '\n';
-        count++;
+static void do_show_variables(ostream&                                     os,
+                              const vector<Variable*>&                     var_vec,
+                              const vector<string>&                        var_names     = {},
+                              const vector<string>&                        glob_patterns = {},
+                              const std::unordered_map<string, Variable*>& var_map       = {}) {
+    vector<Variable*> selected_vars {};
+    const vector<Variable*>* vars_to_show = 
+        ((!var_names.empty() || !glob_patterns.empty()) ? &selected_vars : &var_vec); 
+    for (auto pat : glob_patterns) {
+        for (size_t c = 0; (c = pat.find('*', c)) != string::npos; c += 2)
+            pat.replace(c, 1, ".*");
+        std::regex re {pat};
+        for (const auto& x : var_vec)
+            if (std::regex_search(x->name, re))
+                selected_vars.push_back(x);
     }
+    for (auto name : var_names) {
+        if (var_map.empty()) {
+            auto it = std::find_if(var_vec.begin(), var_vec.end(), [&name](Variable* var){ return var->name == name; });
+            if (it != var_vec.end())
+                selected_vars.push_back(var_vec[std::distance(var_vec.begin(), it)]);
+        }
+        else {
+            if (var_map.contains(name))
+                selected_vars.push_back(var_map.at(name));
+        }
+    }
+    os << var_header;
+    for (const auto x : *vars_to_show)
+        os << *x << '\n';
     os << var_footer;
-    os << count << " Variable" << (count == 1 ? "" : "s") << " shown\n\n";
+    os << vars_to_show->size() << " Variable" << (vars_to_show->size() == 1 ? "" : "s") << " shown\n\n";
     os << std::flush;
 }
 
-void Block::show_fixed(ostream& os) const {
-    int count {0};
-    os << var_header;
+void Block::show_variables(ostream&              os,
+                           const vector<string>& var_names,
+                           const vector<string>& glob_patterns) const {
+    do_show_variables(os, x, var_names, glob_patterns);
+}
+
+void Block::show_fixed(ostream&              os,
+                       const vector<string>& var_names,
+                       const vector<string>& glob_patterns) const {
+    vector<Variable*> fixed_vars;
+    fixed_vars.reserve(x.size());
     for (const auto var : x) {
-        if (var->is_fixed()) {
-            os << *var << '\n';
-            count++;
-        }
+        if (var->is_fixed()) fixed_vars.push_back(var);
     }
-    os << var_footer;
-    os << count << " Variable" << (count == 1 ? "" : "s") << " shown\n\n";
-    os << std::flush;
+    do_show_variables(os, fixed_vars, var_names, glob_patterns);
+}
+
+void Block::show_active(ostream&             os,
+                       const vector<string>& var_names,
+                       const vector<string>& glob_patterns) const {
+    vector<Variable*> active_vars;
+    active_vars.reserve(x.size());
+    for (const auto var : x) {
+        if (var->is_free() && (std::abs(var->z_L) > BNDTOL || std::abs(var->z_U) > BNDTOL)) active_vars.push_back(var);
+    }
+    do_show_variables(os, active_vars, var_names, glob_patterns);
 }
 
 void Block::show_constraints(ostream& os) const {
@@ -401,30 +443,32 @@ Calc::Calc(string_view name_,
     prefix = (fs->name != "index" ? fs->name + "." : "") + name + ".";
 }
 
-void Calc::show_variables(ostream& os) const {
-    int count {0};
-    os << var_header;
-    for (const auto var : x) {
-        os << *var << '\n';
-        count++;
-    }
-    os << var_footer;
-    os << count << " Variable" << (count == 1 ? "" : "s") << " shown\n\n";
-    os << std::flush;
+void Calc::show_variables(ostream&              os,
+                          const vector<string>& var_names,
+                          const vector<string>& glob_patterns) const {
+    do_show_variables(os, x, var_names, glob_patterns);
 }
 
-void Calc::show_fixed(ostream& os) const {
-    int count {0};
-    os << var_header;
+void Calc::show_fixed(ostream&              os,
+                      const vector<string>& var_names,
+                      const vector<string>& glob_patterns) const {
+    vector<Variable*> fixed_vars;
+    fixed_vars.reserve(x.size());
     for (const auto var : x) {
-        if (var->is_fixed()) {
-            os << *var << '\n';
-            count++;
-        }
+        if (var->is_fixed()) fixed_vars.push_back(var);
     }
-    os << var_footer;
-    os << count << " Variable" << (count == 1 ? "" : "s") << " shown\n\n";
-    os << std::flush;
+    do_show_variables(os, fixed_vars, var_names, glob_patterns);
+}
+
+void Calc::show_active(ostream&              os,
+                       const vector<string>& var_names,
+                       const vector<string>& glob_patterns) const {
+    vector<Variable*> active_vars;
+    active_vars.reserve(x.size());
+    for (const auto var : x) {
+        if (var->is_free() && (std::abs(var->z_L) > BNDTOL || std::abs(var->z_U) > BNDTOL)) active_vars.push_back(var);
+    }
+    do_show_variables(os, active_vars, var_names, glob_patterns);
 }
 
 void Calc::show_constraints(ostream& os) const {
@@ -619,30 +663,36 @@ Objective* Model::add_objective(string_view name_, Unit* unit_, double scale_) {
     return obj_p;
 }
 
-void Model::show_variables(ostream& os) const {
-    int count {0};
-    os << var_header;
-    for (const auto& var : x_vec) {
-        os << *var << '\n';
-        count++;
-    }
-    os << var_footer;
-    os << count << " Variable" << (count == 1 ? "" : "s") << " shown\n\n";
-    os << std::flush;
+void Model::show_variables(ostream&              os,
+                           const vector<string>& var_names,
+                           const vector<string>& glob_patterns) const {
+    vector<Variable*> raw_x;
+    raw_x.reserve(x_vec.size());
+    for (const auto& x : x_vec)
+        raw_x.push_back(x.get());
+    do_show_variables(os, raw_x, var_names, glob_patterns, x_map);
 }
 
-void Model::show_fixed(ostream& os) const {
-    int count {0};
-    os << var_header;
+void Model::show_fixed(ostream&              os,
+                       const vector<string>& var_names,
+                       const vector<string>& glob_patterns) const {
+    vector<Variable*> fixed_vars;
+    fixed_vars.reserve(x_vec.size());
     for (const auto& var : x_vec) {
-        if (var->is_fixed()) {
-            os << *var << '\n';
-            count++;
-        }
+        if (var->is_fixed()) fixed_vars.push_back(var.get());
     }
-    os << var_footer;
-    os << count << " Variable" << (count == 1 ? "" : "s") << " shown\n\n";
-    os << std::flush;
+    do_show_variables(os, fixed_vars, var_names, glob_patterns);
+}
+
+void Model::show_active(ostream&             os,
+                       const vector<string>& var_names,
+                       const vector<string>& glob_patterns) const {
+    vector<Variable*> active_vars;
+    active_vars.reserve(x_vec.size());
+    for (const auto& var : x_vec) {
+        if (var->is_free() && (std::abs(var->z_L) > BNDTOL || std::abs(var->z_U) > BNDTOL)) active_vars.push_back(var.get());
+    }
+    do_show_variables(os, active_vars, var_names, glob_patterns);
 }
 
 void Model::show_constraints(ostream& os) const {
@@ -719,15 +769,17 @@ void Model::show_objective_rec(Objective* obj_, ostream& os) const {
 } 
 
 void Model::show_objective(Objective* obj_, ostream& os) const {
-    if (obj_ == nullptr) obj_ = obj;
-    os << "Objective: " << obj_->name << '\n';
+    Objective* obj_to_show = (obj_ != nullptr ? obj_ : obj);
+    if (obj_to_show == nullptr) return;
+    os << "Objective: " << obj_to_show->name << '\n';
     os << obj_header;
-    show_objective_rec(obj_, os);
+    show_objective_rec(obj_to_show, os);
     os << obj_footer << '\n';
     os << std::flush;
 }
 
 void Model::show_obj_grad(ostream& os) const {
+    if (obj == nullptr) return;
     os << "Gradient of objective: " << obj->name << '\n';
     os << obj_grad_header;
     for (const auto& g : obj->grad) {
@@ -958,8 +1010,12 @@ void Model::finalize_solution(
     const IpoptData*           ip_data,
     IpoptCalculatedQuantities* ip_cq)
 {
-    for (Index i = 0; const auto& var : x_vec)
-        var->convert_and_set(x_final[i++]);
+    for (Index i = 0; const auto& var : x_vec) {
+        var->convert_and_set(x_final[i]);
+        var->z_L = z_L[i];
+        var->z_U = z_U[i];
+        i++;
+    }
 }
 
 //---------------------------------------------------------

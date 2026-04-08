@@ -42,14 +42,15 @@ print("Test 4 passed")
 n_test = n_test + 1
 
 -- test 5: Create some prices with that unit.
-N1_price, N2_price, OUT_price = M:Prices( {"Prices.N1_kg", 0.50, u},
-                                          {"Prices.N2_kg", 0.10, u},
-                                          {"Prices.OUT_kg", 0.3, u} )
-if N1_price == nil or N2_price == nil or OUT_price == nil then goto FAILED end
+prices = M:Prices( {"Prices.N1_kg", 0.50, u},
+                   {"Prices.N2_kg", 0.10, u},
+                   {"Prices.OUT_kg", 0.3, u} )
+if prices == nil then goto FAILED end
 print("Test 5 passed")
 n_test = n_test + 1
 
 -- test 6: Change the unit on a price.
+N1_price = prices["Prices.N1_kg"]
 N1_price.unit = "$/lb"
 if not isapprox(N1_price.v, 0.5/2.20462) then goto FAILED end
 print("Test 6 passed")
@@ -130,7 +131,7 @@ if solver == nil then goto FAILED end
 solver:set_option("hessian_approximation", "exact")
 solver:set_option("max_iter", 30)
 solver:set_option("derivative_test", "second-order");
-solver:set_option("tol", 1.0e-6)
+solver:set_option("tol", 1.0e-8)
 solver:set_option("obj_scaling_factor", -1.0)
 solver:set_option("grad_f_constant", "yes")
 
@@ -149,6 +150,7 @@ n_test = n_test + 1
 print("After solve:\n")
 M:show_variables()
 M:show_objective()
+M:show_active()
 
 print(string.format("\nAll %d tests passed\n", n_test - 1))
 do return end

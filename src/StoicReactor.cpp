@@ -81,7 +81,7 @@ StoicReactor::StoicReactor(string_view                                  name_,
             eq = m->add_constraint(prefix + sin->name + "." + c + "_moles_calc");
             g.push_back(eq);
             J.push_back(m->add_J_NZ(eq, x_strm[sin].mass.at(c)));
-            J.push_back(m->add_J_NZ(eq, inlet_moles[c]));
+            J.push_back(m->add_J_NZ(eq, inlet_moles.at(c)));
         }
     }
     for (const auto& c : sout->comps) {
@@ -90,7 +90,7 @@ StoicReactor::StoicReactor(string_view                                  name_,
             eq = m->add_constraint(prefix + sout->name + "." + c + "_moles_calc");
             g.push_back(eq);
             J.push_back(m->add_J_NZ(eq, x_strm[sout].mass.at(c)));
-            J.push_back(m->add_J_NZ(eq, outlet_moles[c]));
+            J.push_back(m->add_J_NZ(eq, outlet_moles.at(c)));
         }
     }
     
@@ -106,8 +106,8 @@ StoicReactor::StoicReactor(string_view                                  name_,
             if (stoic_coef[i].contains(c))
                 J.push_back(m->add_J_NZ(eq, extents[i]));
         }
-        if (inlet_moles.contains(c)) J.push_back(m->add_J_NZ(eq, inlet_moles[c]));
-        if (outlet_moles.contains(c)) J.push_back(m->add_J_NZ(eq, outlet_moles[c]));
+        if (inlet_moles.contains(c)) J.push_back(m->add_J_NZ(eq, inlet_moles.at(c)));
+        if (outlet_moles.contains(c)) J.push_back(m->add_J_NZ(eq, outlet_moles.at(c)));
     }
 
     // Equations defining a per-reaction conversion of some component in terms of the extent of that reaction,
@@ -120,10 +120,10 @@ StoicReactor::StoicReactor(string_view                                  name_,
         conversions[i]->fix();
         eq = m->add_constraint(prefix_ + "_def");
         g.push_back(eq);
-        J.push_back(m->add_J_NZ(eq, inlet_moles[c]));
+        J.push_back(m->add_J_NZ(eq, inlet_moles.at(c)));
         J.push_back(m->add_J_NZ(eq, conversions[i]));
         J.push_back(m->add_J_NZ(eq, extents[i]));
-        H.push_back(m->add_H_NZ(eq, inlet_moles[c], conversions[i]));
+        H.push_back(m->add_H_NZ(eq, inlet_moles.at(c), conversions[i]));
     }
 
     // For the inert components, copy the inlet component mass flow to the outlet,
@@ -131,8 +131,8 @@ StoicReactor::StoicReactor(string_view                                  name_,
     for (const auto& c : inert_comps) {
         eq = m->add_constraint(prefix + c + "_balance");
         g.push_back(eq);
-        J.push_back(m->add_J_NZ(eq, x_strm[sout].mass[c]));
-        J.push_back(m->add_J_NZ(eq, x_strm[sin].mass[c]));
+        J.push_back(m->add_J_NZ(eq, x_strm[sout].mass.at(c)));
+        J.push_back(m->add_J_NZ(eq, x_strm[sin].mass.at(c)));
     }
 
 }
@@ -156,7 +156,7 @@ void StoicReactor::initialize() {
     // Calculate inlet stream component molar flow rates of the reacting components.
     for (const auto& c : sin->comps)
         if (std::ranges::find(rx_comps, c) != rx_comps.end())
-            inlet_moles[c]->convert_and_set(*x_strm[sin].mass[c] / mw[c]);
+            inlet_moles[c]->convert_and_set(*x_strm[sin].mass[c] / mw.at(c));
 
     // Calculate outlet stream component mass flow rates of the inert components.
     for (const auto& c : inert_comps)
@@ -165,7 +165,7 @@ void StoicReactor::initialize() {
     // Calculate the extents of reaction from the conversions.
     for (int i = 0; i < n_rx; i++) {
         auto c = conversion_keys[i];
-        extents[i]->convert_and_set( -( *inlet_moles[c] * *conversions[i] ) / stoic_coef[i][c] );
+        extents[i]->convert_and_set( -( *inlet_moles.at(c) * *conversions[i] ) / stoic_coef[i].at(c) );
     }
 
     // Calculate the outlet reacting component molar flow rates from the extents of reaction.
@@ -174,7 +174,7 @@ void StoicReactor::initialize() {
     for (const auto& c : rx_comps) {
         mf = (inlet_moles.contains(c) ? *inlet_moles[c] : 0.0);
         for (int i = 0; i < n_rx; i++)
-            mf += (stoic_coef[i].contains(c) ? stoic_coef[i][c] : 0.0) * *extents[i];
+            mf += (stoic_coef[i].contains(c) ? stoic_coef[i].at(c) : 0.0) * *extents[i];
         if (outlet_moles.contains(c)) outlet_moles[c]->convert_and_set(mf);
     }
 
@@ -182,7 +182,7 @@ void StoicReactor::initialize() {
     //    e.g., arx.in.mass_c2h2 - arx.in.moles_c2h2 * mw["c2h2"] == 0
     for (const auto& c : sout->comps)
         if (std::ranges::find(rx_comps, c) != rx_comps.end())
-            x_strm[sout].mass[c]->convert_and_set(*(outlet_moles.at(c)) * mw[c]);
+            x_strm[sout].mass[c]->convert_and_set(*(outlet_moles.at(c)) * mw.at(c));
 
     // Calculate total mass flow rate of the outlet stream.
     double out_mass {0.0};
@@ -228,10 +228,10 @@ void StoicReactor::eval_constraints()
     //    e.g., arx.in.mass_c2h2 - arx.in.moles_c2h2 * mw["c2h2"] == 0
     for (const auto& c : sin->comps)
         if (std::ranges::find(rx_comps, c) != rx_comps.end())
-            *g[ic++] = *x_strm[sin].mass.at(c) - *inlet_moles[c] * mw[c];
+            *g[ic++] = *x_strm[sin].mass.at(c) - *inlet_moles.at(c) * mw.at(c);
     for (const auto& c : sout->comps)
         if (std::ranges::find(rx_comps, c) != rx_comps.end())
-            *g[ic++] = *x_strm[sout].mass.at(c) - *(outlet_moles.at(c)) * mw[c];
+            *g[ic++] = *x_strm[sout].mass.at(c) - *(outlet_moles.at(c)) * mw.at(c);
 
     // Equations relating the extents of reaction and the reacting component molar flow rates.
     //    e.g., \sum_i(stoic_coef[i][Cj] * arx.extent_i) + arx.in.moles_Cj - arx.out.moles_Cj == 0 for i = 0, n_rx - 1,
@@ -250,13 +250,13 @@ void StoicReactor::eval_constraints()
     //    e.g., arx.in.moles_c2h2 * arx.conv_c2h2_rx_1 + stoic_coef[1]["c2h2"] * arx.extent_rx_1 == 0
     for (int i = 0; i < n_rx; i++) {
         auto c = conversion_keys[i];
-        *g[ic++] = *inlet_moles[c] * *conversions[i] + stoic_coef[i][c] * *extents[i];
+        *g[ic++] = *inlet_moles.at(c) * *conversions[i] + stoic_coef[i].at(c) * *extents[i];
     }
 
     // Inert components copy equations,
     //    e.g., arx.out.mass_co2 - arx.in.mass_co2 == 0
     for (const auto& c : inert_comps)
-        *g[ic++] = *x_strm[sout].mass[c] - *x_strm[sin].mass[c];
+        *g[ic++] = *x_strm[sout].mass.at(c) - *x_strm[sin].mass.at(c);
 
 }
 
@@ -295,13 +295,13 @@ void StoicReactor::eval_jacobian() {
     for (const auto& c : sin->comps) {
         if (std::ranges::find(rx_comps, c) != rx_comps.end()) {
             *J[ic++] = 1.0;
-            *J[ic++] = -mw[c];
+            *J[ic++] = -mw.at(c);
         }
     }
     for (const auto& c : sout->comps) {
         if (std::ranges::find(rx_comps, c) != rx_comps.end()) {
             *J[ic++] = 1.0;
-            *J[ic++] = -mw[c];
+            *J[ic++] = -mw.at(c);
         }
     }
 
@@ -322,8 +322,8 @@ void StoicReactor::eval_jacobian() {
     for (int i = 0; i < n_rx; i++) {
         auto c = conversion_keys[i];
         *J[ic++] = *conversions[i];
-        *J[ic++] = *inlet_moles[c];
-        *J[ic++] = stoic_coef[i][c];
+        *J[ic++] = *inlet_moles.at(c);
+        *J[ic++] = stoic_coef[i].at(c);
     }
 
     // Inert components copy equations,

@@ -203,6 +203,8 @@ public:
     Index        ix    {};
     Ndouble      lower {};
     Ndouble      upper {};
+    double       z_L   {};
+    double       z_U   {};
     VariableSpec spec  {VariableSpec::Free};
 
     Variable() = default;
@@ -371,7 +373,7 @@ public:
           Flowsheet*        fs_,
           BlockType         blk_type_,
           vector<Stream*>&& inlets_,
-          vector<Stream*>&& outlets_) noexcept;
+          vector<Stream*>&& outlets_);
     virtual ~Block()                = default;
     virtual void initialize()       = 0;
     virtual void eval_constraints() = 0;
@@ -380,8 +382,18 @@ public:
 
     vector<Connection*> connect_inlet_streams();
 
-    void show_variables(ostream& os = cout)   const;
-    void show_fixed(ostream& os = cout)       const;
+    void show_variables(ostream&              os            = cout,
+                        const vector<string>& var_names     = {},
+                        const vector<string>& glob_patterns = {}
+                        ) const;
+    void show_fixed(ostream&              os            = cout,
+                    const vector<string>& var_names     = {},
+                    const vector<string>& glob_patterns = {}
+                    ) const;
+    void show_active(ostream&             os            = cout,
+                    const vector<string>& var_names     = {},
+                    const vector<string>& glob_patterns = {}
+                    ) const;
     void show_constraints(ostream& os = cout) const;
     void show_jacobian(ostream& os = cout)    const;
     void show_hessian(ostream& os = cout)     const;
@@ -416,8 +428,18 @@ public:
     Calc(string_view name_,
          Flowsheet*  fs_);
 
-    void show_variables(ostream& os = cout)   const;
-    void show_fixed(ostream& os = cout)       const;
+    void show_variables(ostream&              os            = cout,
+                        const vector<string>& var_names     = {},
+                        const vector<string>& glob_patterns = {}
+                        ) const;
+    void show_fixed(ostream&              os            = cout,
+                    const vector<string>& var_names     = {},
+                    const vector<string>& glob_patterns = {}
+                    ) const;
+    void show_active(ostream&             os            = cout,
+                    const vector<string>& var_names     = {},
+                    const vector<string>& glob_patterns = {}
+                    ) const;
     void show_constraints(ostream& os = cout) const;
     void show_jacobian(ostream& os = cout)    const;
     void show_hessian(ostream& os = cout)     const;
@@ -525,13 +547,13 @@ public:
 
     Flowsheet* add_flowsheet(string_view name_);
     Stream*    add_stream(const string&  name_,
-                          vector<string> comps) noexcept;
+                          vector<string> comps);
 
     template<typename T, typename... blk_params_T>
     T* add_block(string_view       name_,
                  vector<Stream*>&& inlet_strms,
                  vector<Stream*>&& outlet_strms,
-                 blk_params_T&     ...blk_params) noexcept {
+                 blk_params_T&     ...blk_params) {
              
         auto blk = make_unique<T>(name_,
                                   this,
@@ -698,7 +720,7 @@ public:
     
     Model(string_view name_,
           string_view index_fs_name,
-          UnitSet*    unitset_) noexcept :
+          UnitSet*    unitset_) :
         name    {name_},
         unitset {unitset_}
     {
@@ -732,8 +754,18 @@ public:
                                          1.0 : obj->eval());      }; 
     void        eval_obj_grad()    { if (obj) obj->eval_grad();   }; 
     
-    void        show_variables(ostream& os = cout)   const;
-    void        show_fixed(ostream& os = cout)       const;
+    void        show_variables(ostream&              os            = cout,
+                               const vector<string>& var_names     = {},
+                               const vector<string>& glob_patterns = {}
+                               ) const;
+    void        show_fixed(ostream&              os            = cout,
+                           const vector<string>& var_names     = {},
+                           const vector<string>& glob_patterns = {}
+                           ) const;
+    void        show_active(ostream&             os            = cout,
+                           const vector<string>& var_names     = {},
+                           const vector<string>& glob_patterns = {}
+                           ) const;
     void        show_constraints(ostream& os = cout) const;
     void        show_jacobian(ostream& os = cout)    const;
     void        show_hessian(ostream& os = cout)     const;

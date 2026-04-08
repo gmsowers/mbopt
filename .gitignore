@@ -13,3 +13,4 @@ mboptlib.so
 test.lua
 .gitignore
 
+C2plant_init.lua

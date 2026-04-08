@@ -239,10 +239,55 @@ int eval_reactions(lua_State* L) {
     return 1;
 }
 
+int do_show_variables(lua_State* L, auto f) {
+    auto obj = get_luaobj(L, 1);
+    int n_args = lua_gettop(L);
+    vector<string> var_names {};
+    vector<string> glob_patterns {};
+    for (int i = 2; i <= n_args; i++) {
+        string s = luaL_checkstring(L, i);
+        if (s.find('*') != string::npos) {
+            for (size_t c = 0; (c = s.find('*', c)) != string::npos; c += 2)
+                s.replace(c, 1, ".*");
+            glob_patterns.push_back(s);
+        }
+        else
+            var_names.push_back(s);
+    }
+    if (obj->isa<Model>())
+        f(static_cast<Model*>(obj->obj_p), var_names, glob_patterns);
+    else if (obj->isa<Block>()) {
+        f(static_cast<Block*>(obj->obj_p), var_names, glob_patterns);
+    }
+    else if (obj->isa<Calc>())
+        f(static_cast<Calc*>(obj->obj_p), var_names, glob_patterns);
+
+    return 0;
+}
+
+int show_variables(lua_State* L) {
+    return do_show_variables(L, [](auto* p, 
+                                   const vector<string>& var_names,
+                                   const vector<string> glob_patterns) 
+                                { p->show_variables(*OUT, var_names, glob_patterns); });
+}
+
+int show_fixed(lua_State* L) {
+    return do_show_variables(L, [](auto* p, 
+                                   const vector<string>& var_names,
+                                   const vector<string> glob_patterns) 
+                                { p->show_fixed(*OUT, var_names, glob_patterns); });
+}
+
+int show_active(lua_State* L) {
+    return do_show_variables(L, [](auto* p, 
+                                   const vector<string>& var_names,
+                                   const vector<string> glob_patterns) 
+                                { p->show_active(*OUT, var_names, glob_patterns); });
+}
+
 int delegate(lua_State* L, auto f) {
     auto obj = get_luaobj(L, 1);
-    if (obj == nullptr)
-        luaL_error(L, "attempt to call a member function on a null object");
     if (obj->isa<Model>())
         f(static_cast<Model*>(obj->obj_p));
     else if (obj->isa<Block>()) {
@@ -288,14 +333,6 @@ int eval_jacobian(lua_State* L) {
 
 int eval_hessian(lua_State* L) {
     return delegate(L, [](auto* p) { p->eval_hessian(); });
-}
-
-int show_variables(lua_State* L) {
-    return delegate(L, [](auto* p) { p->show_variables(*OUT); });
-}
-
-int show_fixed(lua_State* L) {
-    return delegate(L, [](auto* p) { p->show_fixed(*OUT); });
 }
 
 int show_constraints(lua_State* L) {
@@ -349,7 +386,7 @@ int write_variables(lua_State* L) {
     ostream* dest = OUT;
     ofstream file;
     if (lua_gettop(L) > 1) {
-        string filename = luaL_checkstring(L, 1);
+        string filename = luaL_checkstring(L, 2);
         file.open(filename, std::ios::out);
         if (!file.is_open())
             lua_warning(L, format("unable to open the file \"{}\"", filename).c_str(), 0);
@@ -1083,7 +1120,7 @@ void HessianNZ_register(lua_State* L) {
 
 //---------------------------------------------------------
 
-static vector<unique_ptr<Model>> models {};
+static vector<Ipopt::SmartPtr<Model>> models {};
 
 int Model_eval_expr(lua_State* L) {
     auto M = check_luaobj<Model>(L, MT_MODEL, 1);
@@ -1241,6 +1278,7 @@ int Model_add_prices(lua_State* L) {
     auto m = check_luaobj<Model>(L, MT_MODEL, 1);
     auto n_args = lua_gettop(L);
     bool ok {true};
+    lua_newtable(L);    // push table of prices
     for (int i = 2; i <= n_args; i++) {
         luaL_argcheck(L, lua_istable(L, i), i, "expected a table");
         auto n_elem = lua_rawlen(L, i);    // number of elements in the ith arg, where arg = {price_name, value, unit}
@@ -1261,11 +1299,11 @@ int Model_add_prices(lua_State* L) {
         luaL_argcheck(L, unit != nullptr, i, "expecting element 3 to be a Unit");
 
         auto p = m->add_price(price_name, value, unit);
-        push_luaobj<Quantity, Price>(L, p, MT_QUANTITY);
+        push_luaobj<Quantity, Price>(L, p, MT_QUANTITY);    // push Price
+        lua_setfield(L, -2, price_name.c_str());            // set {name = Price} and pop Price
     }
 
-    lua_checkstack(L, n_args - 1);
-    return n_args - 1;
+    return 1;
 }
 
 int Model_add_new_objective(lua_State* L) {
@@ -1327,14 +1365,11 @@ int Model_new(lua_State* L) {
     string name = luaL_checkstring(L, 1);
     string index_fs_name = luaL_checkstring(L, 2);
     auto us = check_luaobj<UnitSet>(L, MT_UNITSET, 3);
-    auto m = make_unique<Model>(name, index_fs_name, us);
-    if (m) {
-        auto m_p = m.get();
-        models.push_back(std::move(m));
-        push_luaobj<Model>(L, m_p, MT_MODEL);
-    }
-    else
-        lua_pushnil(L);
+
+    Ipopt::SmartPtr<Model> m = new Model{name, index_fs_name, us};
+    Model* m_p = GetRawPtr(m);
+    models.push_back(std::move(m));
+    push_luaobj<Model>(L, m_p, MT_MODEL);
 
     return 1;
 }
@@ -1374,6 +1409,7 @@ int Model_index(lua_State* L) {
     else if (key == "show_constraints")            lua_pushcfunction(L, show_constraints);
     else if (key == "show_variables" || key == "show_vars") lua_pushcfunction(L, show_variables);
     else if (key == "show_fixed")                  lua_pushcfunction(L, show_fixed);
+    else if (key == "show_active")                 lua_pushcfunction(L, show_active);
     else if (key == "show_jacobian")               lua_pushcfunction(L, show_jacobian);
     else if (key == "show_connections")            lua_pushcfunction(L, Model_show_connections);
     else if (key == "show_prices")                 lua_pushcfunction(L, Model_show_prices);
@@ -1826,6 +1862,7 @@ int Block_index(lua_State* L) {
     else if (key == "eval_hessian")                lua_pushcfunction(L, eval_hessian);
     else if (key == "show_variables" || key == "show_vars") lua_pushcfunction(L, show_variables);
     else if (key == "show_fixed")                  lua_pushcfunction(L, show_fixed);
+    else if (key == "show_active")                 lua_pushcfunction(L, show_active);
     else if (key == "show_constraints")            lua_pushcfunction(L, show_constraints);
     else if (key == "show_jacobian")               lua_pushcfunction(L, show_jacobian);
     else if (key == "show_hessian")                lua_pushcfunction(L, show_hessian);
@@ -1964,7 +2001,9 @@ int Calc_index(lua_State* L) {
     else if (key == "show_constraints")                      lua_pushcfunction(L, show_constraints);
     else if (key == "show_variables" || key == "show_vars")  lua_pushcfunction(L, show_variables);
     else if (key == "show_fixed")                            lua_pushcfunction(L, show_fixed);
+    else if (key == "show_active")                           lua_pushcfunction(L, show_active);
     else if (key == "show_jacobian")                         lua_pushcfunction(L, show_jacobian);
+    else if (key == "show_hessian")                          lua_pushcfunction(L, show_hessian);
     else if (key == "get")                                   lua_pushcfunction(L, Calc_get);
     else if (key == "add_vars" || key == "add_variables")    lua_pushcfunction(L, Calc_add_variables);
     else if (key == "add_cons" || key == "add_constraints")  lua_pushcfunction(L, Calc_add_constraints);
