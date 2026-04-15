@@ -45,10 +45,12 @@ ostream& operator<<(ostream& os, const T& obj) {
     return os << obj.to_str();
 }
 
+string str(double d);
+
+//---------------------------------------------------------
+
 struct UnitKind;
 struct UnitSet;
-
-string str(double d);
 
 struct Unit
 {
@@ -197,6 +199,8 @@ public:
 
 };
 
+//---------------------------------------------------------
+
 class Variable : public Quantity
 {
 public:
@@ -304,15 +308,15 @@ struct HessianNZ
     HessianNZ& operator=(const double& val) {value = val; return *this;}
 };
 
-class Block;
-class Flowsheet;
-
+// For computing union of two string vectors, and comparing them.
 vector<string>  operator+(const vector<string>& c1, const vector<string>& c2);
 vector<string>& operator+=(vector<string>& c1, const vector<string>& c2);
 bool operator!=(const vector<string>& c1, const vector<string>& c2);
 
 //---------------------------------------------------------
 
+class Block;
+class Flowsheet;
 struct Connection;
 
 struct Stream
@@ -332,7 +336,7 @@ struct Stream
         comps {std::move(comps_)}
     {}
 
-    vector<Connection*> connect();
+    vector<Connection*> connect(Stream* upstream = nullptr);
     bool has_comp(string_view c) const {
         return std::ranges::find(comps, c) != comps.end();
     }
@@ -380,7 +384,7 @@ public:
     virtual void eval_jacobian()    = 0;
     virtual void eval_hessian()     = 0;
 
-    vector<Connection*> connect_inlet_streams();
+    vector<Connection*> connect();
 
     void show_variables(ostream&              os            = cout,
                         const vector<string>& var_names     = {},
@@ -448,7 +452,7 @@ public:
     void show_calc(ostream& os = cout)        const;
 
 private:
-    string make_name(const string& suffix) const {
+    string make_func_name(const string& suffix) const {
         string s = prefix + suffix;
         std::replace(s.begin(), s.end(), '.', '_');
         return s;
@@ -456,17 +460,17 @@ private:
 
 public:
     void initialize() const {
-        call_lua_function(make_name("initialize"));
+        call_lua_function(make_func_name("initialize"));
     }
     void eval_constraints() const {
-        call_lua_function(make_name("eval_constraints"));
+        call_lua_function(make_func_name("eval_constraints"));
     }
     void eval_jacobian() const {
-        call_lua_function(make_name("eval_jacobian"));
+        call_lua_function(make_func_name("eval_jacobian"));
     }
     void eval_hessian() const {
         if (H.empty()) return;
-        call_lua_function(make_name("eval_hessian"));
+        call_lua_function(make_func_name("eval_hessian"));
     }
 
 };
@@ -696,6 +700,9 @@ private:
 
 class Model : public TNLP
 {
+private:
+    void show_objective_rec(Objective* obj_, ostream& os) const;
+
 public:
     string                             name;
     unique_ptr<Flowsheet>              index_fs;
@@ -736,8 +743,6 @@ public:
                          Variable*   var2);
     Connection* add_connection(Variable* var1,
                                Variable* var2);
-    bool        add_bridge(Stream* sfrom,
-                           Stream* sto);
     Price*      add_price(string_view name_,
                           double      value_,
                           Unit*       unit_);
@@ -784,6 +789,7 @@ public:
         return x_map.contains(name_) ? x_map.at(name_) : nullptr;
     };
 
+    // Methods required by Ipopt
     virtual bool get_nlp_info(
         Index&          n,
         Index&          m,
@@ -864,8 +870,5 @@ public:
         Number                     obj_value,
         const IpoptData*           ip_data,
         IpoptCalculatedQuantities* ip_cq) override;
-
-private:
-    void show_objective_rec(Objective* obj_, ostream& os) const;
 
 };

@@ -43,18 +43,24 @@ ok = M:eval([[
 ]])
 mix1:init()
 
+-- Create a child flowsheet.
+subFS = FS:Flowsheet("sub")
+
 -- test 4: Create streams and a Splitter block.
-out1, out2 = FS:Streams(
+OUTSUB, out1, out2 = subFS:Streams(
+    { "out",  OUT_comps },
     { "out1", OUT_comps },
     { "out2", OUT_comps }
 )
-spl1 = FS:Splitter("spl1", { OUT }, { out1, out2 })
+spl1 = subFS:Splitter("spl1", { OUTSUB }, { out1, out2 })
 if spl1 == nil then goto FAILED end
 print("Test 4 passed")
 n_test = n_test + 1
 
+M:show_variables()
+
 -- test 5: Connect the mix1 outlet and spl1 inlet streams.
-conns = {spl1:connect_inlets()}
+conns = {OUTSUB:connect(OUT)}
 if #conns == 0 then goto FAILED end
 print("Test 5 passed")
 n_test = n_test + 1
@@ -67,10 +73,7 @@ ok = M:eval([[
     mix1.N2.mass_H2 = 1.0
     mix1.N2.mass_O2 = 1.0
     mix1.N2.mass_CO = 1.0
-    spl1.OUT.mass_H2 = 1.0
-    spl1.OUT.mass_O2 = 1.0
-    spl1.OUT.mass_CO = 1.0
-    spl1.out1.splitfrac = 0.5
+    sub.spl1.out1.splitfrac = 0.5
 ]])
 if not ok then goto FAILED end
 
@@ -80,19 +83,16 @@ M:eval("mix1.N2.mass_H2 = 2.0")
 print("Before solve:\n")
 M:show_variables()
 
+-- test 6: Create a solver object.
 solver = Solver()
 if solver == nil then goto FAILED end
+print("Test 6 passed")
+n_test = n_test + 1
 
 solver:set_option("hessian_approximation", "exact")
 solver:set_option("max_iter", 30)
 solver:set_option("derivative_test", "second-order");
 solver:set_option("tol", 1.0e-6)
-
--- test 6: Initialize the solver.
-status = solver:init()
-if status ~= 0 then goto FAILED end
-print("Test 6 passed")
-n_test = n_test + 1
 
 -- test 7: Solve the problem.
 status = solver:solve(M)

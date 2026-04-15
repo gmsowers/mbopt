@@ -7,6 +7,7 @@
 
 static const double BNDTOL = 3.0e-7;
 
+// Return union of two string vectors
 vector<string> operator+(const vector<string>& c1, const vector<string>& c2)
 {
     vector<string> u {c1};
@@ -17,6 +18,7 @@ vector<string> operator+(const vector<string>& c1, const vector<string>& c2)
     return u;
 }
 
+// Assign to c1 the union of c1 and c2
 vector<string>& operator+=(vector<string>& c1, const vector<string>& c2)
 {
     for (auto& c : c2) {
@@ -26,6 +28,7 @@ vector<string>& operator+=(vector<string>& c1, const vector<string>& c2)
     return c1;
 }
 
+// Compare two string vectors
 bool operator!=(const vector<string>& c1, const vector<string>& c2)
 {
     return std::set<string>(c1.begin(), c1.end()) !=
@@ -84,18 +87,6 @@ void UnitSet::show_units(ostream& os) const {
 
 //---------------------------------------------------------
 
-string Stream::to_str() const {
-    string s = format("Stream: {}\n  flowsheet: {}\n  from: {}\n  to: {}\n  comps: ", name, fs->name,
-        (from == nullptr ? "nil" : from->name),
-        (to == nullptr ? "nil" : to->name));
-    for (const auto& c : comps) s += c + " ";
-    s.pop_back();
-    s += '\n';
-    return s;
-}
-
-//---------------------------------------------------------
-
 void Quantity::change_unit(Unit* new_unit) {
     if (new_unit->kind == unit->kind) {
         auto old_unit = unit;
@@ -106,15 +97,33 @@ void Quantity::change_unit(Unit* new_unit) {
 
 //---------------------------------------------------------
 
-vector<Connection*> Stream::connect() {
+string Stream::to_str() const {
+    string s = format("Stream: {}\n  flowsheet: {}\n  from: {}\n  to: {}\n  comps: ", name, fs->name,
+        (from == nullptr ? "nil" : from->name),
+        (to == nullptr ? "nil" : to->name));
+    for (const auto& c : comps) s += c + " ";
+    s.pop_back();
+    s += '\n';
+    return s;
+}
+
+vector<Connection*> Stream::connect(Stream* upstream) {
     vector<Connection*> connections {};
-    if (!to || !from) return connections;
-    auto M = fs->m;
+    if (to == nullptr) return connections;
+    auto upstream_ = (upstream == nullptr ? this : upstream);
+    auto from_blk = upstream_->from;
+    if (from_blk == nullptr) return connections;
+    if (fs->m != from_blk->fs->m) return connections;
     auto to_sv = to->x_strm[this];
-    auto from_sv = from->x_strm[this];
+    auto from_sv = from_blk->x_strm[upstream_];
     for (const auto& c : comps) {
-        connections.push_back(M->add_connection(to_sv.mass[c], from_sv.mass[c]));
-        to_sv.mass[c]->convert_and_set(*from_sv.mass[c]);
+        if (from_sv.mass.contains(c)) {
+            connections.push_back(fs->m->add_connection(to_sv.mass.at(c), from_sv.mass.at(c)));
+            to_sv.mass.at(c)->convert_and_set(*from_sv.mass.at(c));
+        }
+        else {
+            connections.push_back(nullptr);
+        }
     }
     return connections;
 }
@@ -142,12 +151,12 @@ void Flowsheet::show_flowsheet(ostream& os) const {
     for (const auto& blk : blocks)
         os << "    " << blk->to_str();
     if (!children.empty()) {
-        os << "\n  Flowsheets:\n\n";
+        os << "\n  Flowsheets:\n";
         for (const auto& fs : children)
             os << "    " << fs->name << '\n';
     }
     if (!calcs.empty()) {
-        os << "\n  Calcs:\n\n";
+        os << "\n  Calcs:\n";
         for (const auto& clc : calcs)
             os << format("    {:12}\n", clc->name);
     }
@@ -280,7 +289,7 @@ void Block::make_all_stream_variables() {
     for (const auto& strm : outlets) make_stream_variables(strm);
 }
 
-vector<Connection*> Block::connect_inlet_streams() {
+vector<Connection*> Block::connect() {
     vector<Connection*> connections {};
     for (const auto& strm : inlets) {
         auto s_conns = strm->connect();
@@ -290,6 +299,7 @@ vector<Connection*> Block::connect_inlet_streams() {
     return connections;
 }
 
+// Helper function used by Block, Calc, and Model
 static void do_show_variables(ostream&                                     os,
                               const vector<Variable*>&                     var_vec,
                               const vector<string>&                        var_names     = {},
@@ -412,7 +422,7 @@ static string blk_type_to_str(BlockType blk_type) {
 
 string Block::to_str() const {
     string s_type = blk_type_to_str(blk_type);
-    string s = format("{:12} {:18}  in: ", name, '(' + s_type + ')');
+    string s = format("{:12} {:19}  in: ", name, '(' + s_type + ')');
     for (const auto& sin : inlets) s += sin->name + ' ';
     s += "  out: ";
     for (const auto& sout : outlets) s += sout->name + ' ';
@@ -636,19 +646,6 @@ Connection* Model::add_connection(Variable* var1,
     return cnx.conn_vec.back().get();
 }
 
-bool Model::add_bridge(Stream* sfrom, Stream* sto) {
-    if (sfrom->fs->m != sto->fs->m) return false;
-    if (sfrom->comps != sto->comps) return false;
-    auto M = sfrom->fs->m;
-    auto to_sv = sto->to->x_strm[sto];
-    auto from_sv = sfrom->from->x_strm[sfrom];
-    for (const auto& c : sfrom->comps) {
-        auto conn_p = M->add_connection(to_sv.mass[c], from_sv.mass[c]);
-        if (!conn_p) return false;
-    }
-    return true;
-}
-
 Price* Model::add_price(string_view name_, double value_, Unit* unit_) {
     auto price = make_unique<Price>(name_, value_, unit_);
     auto price_p = price.get();
@@ -801,7 +798,9 @@ void Model::show_model(ostream& os) const {
     int nDOF = nfree - mg;
     int njnz = J.size();
     int nhnz = H.size();
-    os << "Model: " << name << '\n';
+    os << "Model: " << name;
+    if (obj != nullptr) os << "    Objective: " << obj->name;
+    os << '\n';
     os << "  Number of equations          = " << mg      << '\n';
     os << "  Number of free variables     = " << nfree   << '\n';
     os << "  Number of fixed variables    = " << nfixed  << '\n';
@@ -824,7 +823,7 @@ void Model::write_variables(ostream& os) const {
     os << std::flush;
 }
 
-
+// Methods required by Ipopt
 bool Model::get_nlp_info(
     Index&          n,
     Index&          m,

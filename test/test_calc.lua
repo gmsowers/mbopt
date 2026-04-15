@@ -89,7 +89,7 @@ function calc1_initialize()
     inlet_mass_sum.v = N1_mass.bv + N2_mass.bv
 end
 print(calc1)
-M:init()
+calc1:init()
 M:show_variables()
 
 function calc1_eval_constraints()
