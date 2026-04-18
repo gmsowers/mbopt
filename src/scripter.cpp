@@ -117,7 +117,7 @@ static const char* MT_CONNECTION  = "mbopt.Connection";
 
 using Solver = IpoptApplication;
 
-// Wrapper for passing C++ objects to and from Lua
+// Wrapper for passing pointers to C++ objects to and from Lua while remembering their types
 struct LuaObj {
     void*           obj_p;
     std::type_index base_type;
@@ -173,7 +173,7 @@ T* get_luaobj_elem(lua_State* L, int index, lua_Integer n) {
 }
 
 int show_LuaObj_type(lua_State* L) {
-    auto luaobj = static_cast<LuaObj*>(lua_touserdata(L, -1));
+    auto luaobj = get_luaobj(L, -1);
     const char* s {};
     if (luaobj->isa<Variable>())
         s = "Variable";
