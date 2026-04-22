@@ -1473,6 +1473,7 @@ int Model_index(lua_State* L) {
     else if (key == "show_fixed")                  lua_pushcfunction(L, show_fixed);
     else if (key == "show_active")                 lua_pushcfunction(L, show_active);
     else if (key == "show_jacobian")               lua_pushcfunction(L, show_jacobian);
+    else if (key == "show_hessian")                lua_pushcfunction(L, show_hessian);
     else if (key == "show_connections")            lua_pushcfunction(L, Model_show_connections);
     else if (key == "show_prices")                 lua_pushcfunction(L, Model_show_prices);
     else if (key == "show_objective")              lua_pushcfunction(L, Model_show_objective);

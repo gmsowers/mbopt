@@ -136,7 +136,7 @@ print("After solve:\n")
 M:show_variables()
 M:show_variables("mix1.N1.massfrac_H2", "mix1.OUT.mass_H2", "mix1.OUT.massfrac*")
 M:show_fixed("N2*")
-
+M:show_hessian()
 --FS:render()
 
 print(string.format("\nAll %d tests passed\n", n_test - 1))
