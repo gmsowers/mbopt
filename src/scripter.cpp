@@ -1646,7 +1646,9 @@ int Flowsheet_get(lua_State* L) {
         push_luaobj<Calc>(L, fs->calcs_map[name], MT_CALC);
     else if (fs->streams.contains(name))
         push_luaobj<Stream>(L, fs->streams[name].get(), MT_STREAM);
-
+    else
+        lua_pushnil(L);
+    
     return 1;
 }
 
