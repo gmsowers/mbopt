@@ -1648,7 +1648,7 @@ int Flowsheet_get(lua_State* L) {
         push_luaobj<Stream>(L, fs->streams[name].get(), MT_STREAM);
     else
         lua_pushnil(L);
-    
+
     return 1;
 }
 
@@ -1928,6 +1928,7 @@ int Block_index(lua_State* L) {
     auto blk = check_luaobj<Block>(L, MT_BLOCK, 1);
     string key = luaL_checkstring(L, 2);
     if      (key == "name")                        lua_pushstring(L, blk->name.c_str());
+    else if (key == "fs")                          push_luaobj<Flowsheet>(L, blk->fs, MT_FLOWSHEET);
     else if (key == "init" || key == "initialize") lua_pushcfunction(L, initialize);
     else if (key == "get")                         lua_pushcfunction(L, Block_get);
     else if (key == "eval_constraints")            lua_pushcfunction(L, eval_constraints);
@@ -2070,6 +2071,7 @@ int Calc_index(lua_State* L) {
     auto calc = check_luaobj<Calc>(L, MT_CALC, 1);
     string key = luaL_checkstring(L, 2);
     if      (key == "name")                                  lua_pushstring(L, calc->name.c_str());
+    else if (key == "fs")                                    push_luaobj<Flowsheet>(L, calc->fs, MT_FLOWSHEET);
     else if (key == "init" || key == "initialize")           lua_pushcfunction(L, initialize);
     else if (key == "eval_constraints")                      lua_pushcfunction(L, eval_constraints);
     else if (key == "show_constraints")                      lua_pushcfunction(L, show_constraints);
